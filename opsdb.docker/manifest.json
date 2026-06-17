@@ -1,0 +1,165 @@
+{
+  "key": "opsdb.docker",
+  "name": "Docker Container Monitoring",
+  "version": "1.0.0",
+  "author": "OpsDB Platform",
+  "description": "Monitor Docker hosts and containers including container health, restart counts, resource usage, image inventory, and Docker Engine metrics.",
+  "license_feature": "opsdb.docker",
+  "icon": "icon.svg",
+  "target_types": [
+    {
+      "id": "docker_host",
+      "display_name": "Docker Host",
+      "category": "container",
+      "capabilities": {
+        "connection_protocol": "docker_api",
+        "connection_schema": [
+          {
+            "key": "docker_host",
+            "label": "Docker Socket / TCP URL",
+            "type": "text",
+            "required": false,
+            "placeholder": "unix:///var/run/docker.sock"
+          },
+          {
+            "key": "tls_verify",
+            "label": "TLS Verify",
+            "type": "select",
+            "required": false,
+            "default": "no",
+            "options": [
+              "yes",
+              "no"
+            ]
+          },
+          {
+            "key": "credential_ref",
+            "label": "TLS Certificate Credential",
+            "type": "credential",
+            "required": false
+          }
+        ],
+        "monitoring_pages": [
+          "Control Center",
+          "Container Stats",
+          "Resource Usage",
+          "Images",
+          "Networks",
+          "Volumes",
+          "Alerts & Events",
+          "Findings Analysis",
+          "Runtime Collectors",
+          "Collector Frequencies",
+          "Report",
+          "Dashboard Info"
+        ],
+        "collectors": [
+          "docker.container_stats",
+          "docker.image_usage"
+        ],
+        "findings": [
+          "docker_container_restarts_high",
+          "docker_cpu_throttling_high",
+          "docker_image_storage_high"
+        ],
+        "workflow_nodes": [
+          "run_docker_collector",
+          "evaluate_docker_findings"
+        ],
+        "dashboards": [
+          "docker_host_dashboard"
+        ],
+        "report_sections": [
+          "docker_health_summary"
+        ]
+      }
+    }
+  ],
+  "collector_meta": {
+    "docker.container_stats": {
+      "domain": "Compute",
+      "description": "Total, running, and restarting container counts via Docker Engine API.",
+      "default_frequency": "5 minutes",
+      "endpoint": "/containers/json?all=1",
+      "result_mapping": [
+        {
+          "metric_name": "total_containers",
+          "aggregate": "count"
+        },
+        {
+          "metric_name": "running_containers",
+          "filter": {
+            "Status": "running"
+          },
+          "aggregate": "count"
+        },
+        {
+          "metric_name": "container_restart_count",
+          "field": "RestartCount",
+          "aggregate": "sum"
+        }
+      ]
+    },
+    "docker.image_usage": {
+      "domain": "Storage",
+      "description": "Total image count and aggregate size via Docker Engine API.",
+      "default_frequency": "30 minutes",
+      "endpoint": "/images/json",
+      "result_mapping": [
+        {
+          "metric_name": "total_images",
+          "aggregate": "count"
+        },
+        {
+          "metric_name": "image_storage_bytes",
+          "field": "Size",
+          "aggregate": "sum"
+        }
+      ],
+      "units": {
+        "image_storage_bytes": "bytes"
+      }
+    }
+  },
+  "findings": {
+    "docker_container_restarts_high": {
+      "title": "Container Restart Count High",
+      "domain": "Availability",
+      "severity": "critical",
+      "condition": "container_restart_count > 5",
+      "threshold": "5",
+      "recommendation": "Inspect container logs for crash causes and review liveness/readiness probe configuration.",
+      "metadata_json": {
+        "metric_name": "container_restart_count",
+        "operator": ">",
+        "threshold": 5
+      }
+    },
+    "docker_cpu_throttling_high": {
+      "title": "Container CPU Throttling High",
+      "domain": "Performance",
+      "severity": "warning",
+      "condition": "cpu_throttled_percent > 30",
+      "threshold": "30",
+      "recommendation": "Review container CPU limits and consider increasing limits or optimizing application load.",
+      "metadata_json": {
+        "metric_name": "cpu_throttled_percent",
+        "operator": ">",
+        "threshold": 30
+      }
+    },
+    "docker_image_storage_high": {
+      "title": "Image Storage High",
+      "domain": "Storage",
+      "severity": "warning",
+      "condition": "image_storage_gb > 20",
+      "threshold": "20",
+      "recommendation": "Run docker image prune, remove unused images, and review image build sizes.",
+      "metadata_json": {
+        "metric_name": "image_storage_gb",
+        "operator": ">",
+        "threshold": 20
+      }
+    }
+  }
+}

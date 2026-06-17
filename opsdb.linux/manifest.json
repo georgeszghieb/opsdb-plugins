@@ -1,0 +1,165 @@
+{
+  "key": "opsdb.linux",
+  "name": "Linux Infrastructure Monitoring",
+  "version": "1.0.0",
+  "author": "OpsDB Platform",
+  "description": "Monitor Linux servers via SSH including CPU usage, memory utilisation, disk I/O, network throughput, and filesystem capacity.",
+  "license_feature": "opsdb.linux",
+  "icon": "icon.svg",
+  "target_types": [
+    {
+      "id": "linux_server",
+      "display_name": "Linux Server / VM",
+      "category": "infrastructure",
+      "capabilities": {
+        "connection_protocol": "ssh",
+        "connection_schema": [
+          {
+            "key": "host",
+            "label": "Host / IP",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "port",
+            "label": "SSH Port",
+            "type": "number",
+            "required": true,
+            "default": 22
+          },
+          {
+            "key": "username",
+            "label": "Username",
+            "type": "text",
+            "required": true,
+            "default": "root"
+          },
+          {
+            "key": "credential_ref",
+            "label": "Password / Key Credential",
+            "type": "credential",
+            "required": true
+          }
+        ],
+        "monitoring_pages": [
+          "Control Center",
+          "CPU",
+          "Memory",
+          "Disk / Filesystems",
+          "Services",
+          "Network",
+          "Logs / Events",
+          "Security",
+          "Capacity",
+          "Alerts & Events",
+          "Findings Analysis",
+          "Runtime Collectors",
+          "Collector Frequencies",
+          "Log Diagnose",
+          "Report",
+          "Dashboard Info"
+        ],
+        "collectors": [
+          "linux.cpu_memory",
+          "linux.disk_io",
+          "linux.network"
+        ],
+        "findings": [
+          "linux_cpu_usage_high",
+          "linux_disk_usage_high",
+          "linux_memory_pressure_high"
+        ],
+        "workflow_nodes": [
+          "run_linux_collector",
+          "evaluate_linux_findings"
+        ],
+        "dashboards": [
+          "linux_system_dashboard"
+        ],
+        "report_sections": [
+          "linux_health_summary"
+        ]
+      }
+    }
+  ],
+  "collector_meta": {
+    "linux.cpu_memory": {
+      "domain": "Compute",
+      "description": "CPU usage percent and memory utilisation from /proc/stat and /proc/meminfo.",
+      "default_frequency": "5 minutes",
+      "command": "python3 -c \"import json;s=open('/proc/stat').readline().split();idle,total=int(s[4]),sum(int(x) for x in s[1:]);m={l.split(':')[0]:int(l.split()[1])*1024 for l in open('/proc/meminfo') if ':' in l};avail=m.get('MemAvailable',m.get('MemFree',0));print(json.dumps({'cpu_usage_percent':round((1-idle/total)*100,1),'memory_used_percent':round((m['MemTotal']-avail)/m['MemTotal']*100,1),'memory_total_bytes':m['MemTotal'],'memory_available_bytes':avail}))\"",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "cpu_usage_percent": "percent",
+        "memory_used_percent": "percent",
+        "memory_total_bytes": "bytes",
+        "memory_available_bytes": "bytes"
+      }
+    },
+    "linux.disk_io": {
+      "domain": "Storage",
+      "description": "Maximum disk usage percent across all mounted filesystems.",
+      "default_frequency": "10 minutes",
+      "command": "python3 -c \"import json,subprocess;lines=subprocess.check_output(['df','-B1','--output=source,size,used,avail,pcent,target']).decode().strip().split('\\n')[1:];pcts=[int(p[4].rstrip('%')) for p in [l.split() for l in lines] if len(p)==6 and p[5].startswith('/') and not p[5].startswith('/proc') and not p[5].startswith('/sys')];print(json.dumps({'disk_used_percent':max(pcts) if pcts else 0}))\"",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "disk_used_percent": "percent"
+      }
+    },
+    "linux.network": {
+      "domain": "Network",
+      "description": "Total rx/tx bytes across non-loopback interfaces from /proc/net/dev.",
+      "default_frequency": "10 minutes",
+      "command": "python3 -c \"import json;lines=open('/proc/net/dev').read().strip().split('\\n')[2:];rx=tx=0;[None for l in lines if ':' in l and l.split(':')[0].strip()!='lo' and (globals().update({'rx':rx+int(l.split(':')[1].split()[0]),'tx':tx+int(l.split(':')[1].split()[8])}) or True)];print(json.dumps({'network_rx_bytes':rx,'network_tx_bytes':tx}))\"",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "network_rx_bytes": "bytes",
+        "network_tx_bytes": "bytes"
+      }
+    }
+  },
+  "findings": {
+    "linux_cpu_usage_high": {
+      "title": "CPU Usage High",
+      "domain": "Compute",
+      "severity": "warning",
+      "condition": "cpu_usage_percent > 85",
+      "threshold": "85",
+      "recommendation": "Identify high-CPU processes, check for runaway cron jobs, and review scheduling.",
+      "metadata_json": {
+        "metric_name": "cpu_usage_percent",
+        "operator": ">",
+        "threshold": 85
+      }
+    },
+    "linux_disk_usage_high": {
+      "title": "Disk Usage High",
+      "domain": "Storage",
+      "severity": "critical",
+      "condition": "disk_used_percent > 90",
+      "threshold": "90",
+      "recommendation": "Free disk space, archive or delete old logs, and review retention policies.",
+      "metadata_json": {
+        "metric_name": "disk_used_percent",
+        "operator": ">",
+        "threshold": 90
+      }
+    },
+    "linux_memory_pressure_high": {
+      "title": "Memory Pressure High",
+      "domain": "Compute",
+      "severity": "warning",
+      "condition": "memory_used_percent > 90",
+      "threshold": "90",
+      "recommendation": "Review memory-heavy processes, check for memory leaks, and consider adding swap or RAM.",
+      "metadata_json": {
+        "metric_name": "memory_used_percent",
+        "operator": ">",
+        "threshold": 90
+      }
+    }
+  }
+}

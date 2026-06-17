@@ -1,0 +1,189 @@
+{
+  "key": "opsdb.postgresql",
+  "name": "PostgreSQL Observability",
+  "version": "1.0.0",
+  "author": "OpsDB Platform",
+  "description": "Monitor PostgreSQL databases including performance metrics, connection activity, query analysis, storage health, vacuum state, and replication lag.",
+  "license_feature": "opsdb.postgresql",
+  "icon": "icon.svg",
+  "target_types": [
+    {
+      "id": "postgresql",
+      "display_name": "PostgreSQL Database / Cluster",
+      "category": "database",
+      "capabilities": {
+        "connection_protocol": "postgresql",
+        "connection_schema": [
+          {
+            "key": "host",
+            "label": "Host",
+            "type": "text",
+            "required": true,
+            "placeholder": "localhost"
+          },
+          {
+            "key": "port",
+            "label": "Port",
+            "type": "number",
+            "required": true,
+            "default": 5432
+          },
+          {
+            "key": "database",
+            "label": "Database",
+            "type": "text",
+            "required": false,
+            "placeholder": "postgres"
+          },
+          {
+            "key": "user",
+            "label": "Username",
+            "type": "text",
+            "required": false
+          },
+          {
+            "key": "credential_ref",
+            "label": "Password Credential",
+            "type": "credential",
+            "required": false
+          },
+          {
+            "key": "ssl_mode",
+            "label": "SSL Mode",
+            "type": "select",
+            "required": false,
+            "default": "prefer",
+            "options": [
+              "disable",
+              "allow",
+              "prefer",
+              "require"
+            ]
+          },
+          {
+            "key": "connection_env",
+            "label": "DSN Env Variable (optional override)",
+            "type": "text",
+            "required": false,
+            "placeholder": "POSTGRES_DSN"
+          }
+        ],
+        "monitoring_pages": [
+          "Control Center",
+          "Enterprise Monitor",
+          "CPU Usage",
+          "Memory Usage",
+          "Waits & Sessions",
+          "Locks & Blocking",
+          "Query Performance",
+          "EXPLAIN Analyzer",
+          "Storage & Vacuum",
+          "Index and Table",
+          "Backup & DR",
+          "Security Monitor",
+          "Best Practices",
+          "Alerts & Events",
+          "Findings Analysis",
+          "Runtime Collectors",
+          "Collector Frequencies",
+          "SQL Diagnose",
+          "Log Diagnose",
+          "Report",
+          "Dashboard Info"
+        ],
+        "collectors": [
+          "postgres.activity_locks",
+          "postgres.global_stats",
+          "postgres.storage_vacuum"
+        ],
+        "findings": [
+          "cache_hit_ratio_low",
+          "dead_tuples_high",
+          "replication_lag_high"
+        ],
+        "workflow_nodes": [
+          "run_postgres_collector",
+          "evaluate_postgres_findings"
+        ],
+        "dashboards": [
+          "postgres_control_center"
+        ],
+        "report_sections": [
+          "postgres_health_summary"
+        ]
+      }
+    }
+  ],
+  "collector_meta": {
+    "postgres.activity_locks": {
+      "domain": "Activity",
+      "description": "Active sessions, waiting sessions, idle-in-transaction, and blocked lock counts.",
+      "default_frequency": "5 minutes",
+      "query": "SELECT count(*) FILTER (WHERE state = 'active') AS active_sessions, count(*) FILTER (WHERE wait_event_type IS NOT NULL) AS waiting_sessions, count(*) FILTER (WHERE state = 'idle in transaction') AS idle_in_transaction_sessions, (SELECT count(*) FROM pg_locks WHERE NOT granted) AS blocked_locks FROM pg_stat_activity",
+      "result_mapping": "columns"
+    },
+    "postgres.global_stats": {
+      "domain": "Performance",
+      "description": "Cache hit ratio, transaction counts, deadlocks, temp usage, database size, and XID age.",
+      "default_frequency": "15 minutes",
+      "query": "SELECT coalesce(d.numbackends, 0) AS active_sessions, coalesce(d.xact_commit + d.xact_rollback, 0) AS total_transactions, CASE WHEN coalesce(d.blks_hit + d.blks_read, 0) = 0 THEN 0 ELSE round((d.blks_hit::numeric * 100.0) / nullif(d.blks_hit + d.blks_read, 0), 2) END AS cache_hit_percent, coalesce(d.deadlocks, 0) AS deadlocks, coalesce(d.temp_files, 0) AS temp_files, coalesce(d.temp_bytes, 0) AS temp_bytes, pg_database_size(current_database()) AS current_database_size_bytes, age(pg.datfrozenxid) AS max_freeze_age FROM pg_stat_database d JOIN pg_database pg ON pg.datname = d.datname WHERE d.datname = current_database()",
+      "result_mapping": "columns",
+      "units": {
+        "cache_hit_percent": "percent",
+        "temp_bytes": "bytes",
+        "current_database_size_bytes": "bytes"
+      }
+    },
+    "postgres.storage_vacuum": {
+      "domain": "Storage & Vacuum",
+      "description": "Live/dead tuple counts, dead tuple percentage, and vacuum/autovacuum run counts.",
+      "default_frequency": "15 minutes",
+      "query": "SELECT coalesce(sum(n_live_tup), 0) AS live_tuples, coalesce(sum(n_dead_tup), 0) AS dead_tuples, CASE WHEN coalesce(sum(n_live_tup + n_dead_tup), 0) = 0 THEN 0 ELSE round((sum(n_dead_tup)::numeric * 100.0) / nullif(sum(n_live_tup + n_dead_tup), 0), 2) END AS dead_tuple_percent, coalesce(sum(vacuum_count), 0) AS vacuum_count, coalesce(sum(autovacuum_count), 0) AS autovacuum_count FROM pg_stat_user_tables",
+      "result_mapping": "columns",
+      "units": {
+        "dead_tuple_percent": "percent"
+      }
+    }
+  },
+  "findings": {
+    "cache_hit_ratio_low": {
+      "title": "Cache Hit Ratio Low",
+      "domain": "Performance",
+      "severity": "warning",
+      "condition": "cache_hit_percent < 98",
+      "threshold": "98",
+      "recommendation": "Review shared buffers, query patterns, and index usage for excessive disk reads.",
+      "metadata_json": {
+        "metric_name": "cache_hit_percent",
+        "operator": "<",
+        "threshold": 98
+      }
+    },
+    "dead_tuples_high": {
+      "title": "Dead Tuples High",
+      "domain": "Storage & Vacuum",
+      "severity": "warning",
+      "condition": "dead_tuple_percent > 20",
+      "threshold": "20",
+      "recommendation": "Review autovacuum health, long transactions, and tables with high dead tuple percentages.",
+      "metadata_json": {
+        "metric_name": "dead_tuple_percent",
+        "operator": ">",
+        "threshold": 20
+      }
+    },
+    "replication_lag_high": {
+      "title": "Replication Lag High",
+      "domain": "Availability",
+      "severity": "critical",
+      "condition": "max_replication_lag_seconds > 60",
+      "threshold": "60",
+      "recommendation": "Check replica connectivity, WAL shipping, replication slots, and downstream apply delay.",
+      "metadata_json": {
+        "metric_name": "max_replication_lag_seconds",
+        "operator": ">",
+        "threshold": 60
+      }
+    }
+  }
+}

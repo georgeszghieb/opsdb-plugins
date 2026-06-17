@@ -1,0 +1,222 @@
+{
+  "key": "opsdb.business_validation",
+  "name": "Business Validation Observability",
+  "version": "0.1.1",
+  "author": "OpsDB Platform",
+  "description": "Monitor data quality through parameterised SQL checks including row count anomaly detection, null rate analysis, duplicate detection, and data freshness validation against PostgreSQL or SQL Server targets.",
+  "license_feature": "opsdb.business_validation",
+  "icon": "icon.svg",
+  "target_types": [
+    {
+      "id": "business_validation",
+      "display_name": "Business Validation Target",
+      "category": "data_quality",
+      "capabilities": {
+        "connection_protocol": "sql_from_metadata",
+        "connection_schema": [
+          {
+            "key": "db_type",
+            "label": "Database Type",
+            "type": "select",
+            "required": true,
+            "options": [
+              "postgresql",
+              "sqlserver"
+            ],
+            "default": "postgresql"
+          },
+          {
+            "key": "host",
+            "label": "Host",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "port",
+            "label": "Port",
+            "type": "number",
+            "required": true,
+            "default": 5432
+          },
+          {
+            "key": "database",
+            "label": "Database",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "user",
+            "label": "Username",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "credential_ref",
+            "label": "Password Credential",
+            "type": "credential",
+            "required": true
+          },
+          {
+            "key": "table",
+            "label": "Target Table",
+            "type": "text",
+            "required": false,
+            "placeholder": "schema.table_name"
+          },
+          {
+            "key": "column",
+            "label": "Key Column (null / duplicate checks)",
+            "type": "text",
+            "required": false
+          },
+          {
+            "key": "timestamp_column",
+            "label": "Timestamp Column (freshness check)",
+            "type": "text",
+            "required": false
+          }
+        ],
+        "monitoring_pages": [
+          "Control Center",
+          "Row Count Monitor",
+          "Null Rate Analysis",
+          "Duplicate Check",
+          "Data Freshness",
+          "Alerts & Events",
+          "Findings Analysis",
+          "Runtime Collectors",
+          "Collector Frequencies",
+          "SQL Diagnose",
+          "Report",
+          "Dashboard Info"
+        ],
+        "collectors": [
+          "bv.row_count_check",
+          "bv.null_check",
+          "bv.duplicate_check",
+          "bv.freshness_check"
+        ],
+        "findings": [
+          "bv_row_count_anomaly",
+          "bv_null_rate_high",
+          "bv_duplicate_rate_high",
+          "bv_data_freshness_stale"
+        ],
+        "workflow_nodes": [
+          "run_business_validation",
+          "evaluate_business_findings"
+        ],
+        "dashboards": [
+          "bv_quality_dashboard"
+        ],
+        "report_sections": [
+          "bv_quality_summary"
+        ]
+      }
+    }
+  ],
+  "collector_meta": {
+    "bv.row_count_check": {
+      "domain": "Data Quality",
+      "description": "Counts rows in the configured table and compares against the stored baseline.",
+      "default_frequency": "60 minutes",
+      "query_template": "SELECT COUNT(*) AS row_count FROM {table}",
+      "metadata_params": [
+        "table"
+      ]
+    },
+    "bv.null_check": {
+      "domain": "Data Quality",
+      "description": "Calculates null rate percent for the configured column.",
+      "default_frequency": "60 minutes",
+      "query_template": "SELECT CAST(SUM(CASE WHEN {column} IS NULL THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(COUNT(*), 0) * 100 AS null_rate_percent FROM {table}",
+      "metadata_params": [
+        "table",
+        "column"
+      ],
+      "units": {
+        "null_rate_percent": "percent"
+      }
+    },
+    "bv.duplicate_check": {
+      "domain": "Data Quality",
+      "description": "Calculates duplicate row rate percent using the configured key column.",
+      "default_frequency": "60 minutes",
+      "query_template": "SELECT CAST(SUM(cnt)-COUNT(*) AS FLOAT) / NULLIF(COUNT(*),0) * 100 AS duplicate_rate_percent FROM (SELECT {column}, COUNT(*) AS cnt FROM {table} GROUP BY {column}) sub",
+      "metadata_params": [
+        "table",
+        "column"
+      ],
+      "units": {
+        "duplicate_rate_percent": "percent"
+      }
+    },
+    "bv.freshness_check": {
+      "domain": "Data Quality",
+      "description": "Computes hours since last load using the configured timestamp column.",
+      "default_frequency": "30 minutes",
+      "query_template": "SELECT EXTRACT(EPOCH FROM (NOW() - MAX({timestamp_column}))) / 3600.0 AS hours_since_last_load FROM {table}",
+      "metadata_params": [
+        "table",
+        "timestamp_column"
+      ],
+      "units": {
+        "hours_since_last_load": "hours"
+      }
+    }
+  },
+  "findings": {
+    "bv_row_count_anomaly": {
+      "title": "Row Count Anomaly Detected",
+      "domain": "Data Quality",
+      "severity": "warning",
+      "condition": "row_count_deviation_percent > 20",
+      "threshold": "20",
+      "recommendation": "Compare current row count against the baseline; investigate missing or duplicate load batches.",
+      "metadata_json": {
+        "metric_name": "row_count_deviation_percent",
+        "operator": ">",
+        "threshold": 20
+      }
+    },
+    "bv_null_rate_high": {
+      "title": "Null Rate High",
+      "domain": "Data Quality",
+      "severity": "warning",
+      "condition": "null_rate_percent > 5",
+      "threshold": "5",
+      "recommendation": "Review upstream ETL logic and source system for unexpected null production.",
+      "metadata_json": {
+        "metric_name": "null_rate_percent",
+        "operator": ">",
+        "threshold": 5
+      }
+    },
+    "bv_duplicate_rate_high": {
+      "title": "Duplicate Rate High",
+      "domain": "Data Quality",
+      "severity": "critical",
+      "condition": "duplicate_rate_percent > 1",
+      "threshold": "1",
+      "recommendation": "Inspect deduplication keys, ETL idempotency, and source-to-target pipeline runs.",
+      "metadata_json": {
+        "metric_name": "duplicate_rate_percent",
+        "operator": ">",
+        "threshold": 1
+      }
+    },
+    "bv_data_freshness_stale": {
+      "title": "Data Freshness Stale",
+      "domain": "Data Quality",
+      "severity": "warning",
+      "condition": "hours_since_last_load > 24",
+      "threshold": "24",
+      "recommendation": "Verify scheduled pipeline runs, check for ETL failures, and review alerting on load jobs.",
+      "metadata_json": {
+        "metric_name": "hours_since_last_load",
+        "operator": ">",
+        "threshold": 24
+      }
+    }
+  }
+}

@@ -1,0 +1,189 @@
+{
+  "key": "opsdb.kubernetes",
+  "name": "Kubernetes Cluster Monitoring",
+  "version": "1.0.0",
+  "author": "OpsDB Platform",
+  "description": "Monitor Kubernetes clusters including pod health, CrashLoopBackOff detection, node resource pressure, and deployment replica availability.",
+  "license_feature": "opsdb.kubernetes",
+  "icon": "icon.svg",
+  "target_types": [
+    {
+      "id": "kubernetes_cluster",
+      "display_name": "Kubernetes Cluster",
+      "category": "container",
+      "capabilities": {
+        "connection_protocol": "k8s_api",
+        "connection_schema": [
+          {
+            "key": "kubeconfig_env",
+            "label": "Kubeconfig Env Variable",
+            "type": "text",
+            "required": false,
+            "placeholder": "KUBECONFIG"
+          },
+          {
+            "key": "kube_api_url",
+            "label": "API Server URL (optional)",
+            "type": "text",
+            "required": false,
+            "placeholder": "https://k8s-api.example.com:6443"
+          },
+          {
+            "key": "credential_ref",
+            "label": "Service Account Token",
+            "type": "credential",
+            "required": false
+          },
+          {
+            "key": "namespace",
+            "label": "Namespace (empty = all)",
+            "type": "text",
+            "required": false
+          }
+        ],
+        "monitoring_pages": [
+          "Control Center",
+          "Pods",
+          "Nodes",
+          "Deployments",
+          "Services",
+          "Namespaces",
+          "Resource Usage",
+          "Alerts & Events",
+          "Findings Analysis",
+          "Runtime Collectors",
+          "Collector Frequencies",
+          "Report",
+          "Dashboard Info"
+        ],
+        "collectors": [
+          "k8s.pod_stats",
+          "k8s.node_resources",
+          "k8s.deployment_health"
+        ],
+        "findings": [
+          "k8s_pod_crash_loop",
+          "k8s_node_resource_pressure",
+          "k8s_deployment_replica_mismatch"
+        ],
+        "workflow_nodes": [
+          "run_k8s_collector",
+          "evaluate_k8s_findings"
+        ],
+        "dashboards": [
+          "k8s_cluster_dashboard"
+        ],
+        "report_sections": [
+          "k8s_health_summary"
+        ]
+      }
+    }
+  ],
+  "collector_meta": {
+    "k8s.pod_stats": {
+      "domain": "Compute",
+      "description": "Pod phase counts and CrashLoopBackOff pod count across all namespaces.",
+      "default_frequency": "5 minutes",
+      "resource": "pods",
+      "namespace": "all",
+      "result_mapping": [
+        {
+          "metric_name": "total_pods",
+          "aggregate": "count"
+        },
+        {
+          "metric_name": "running_pods",
+          "filter": {
+            "status.phase": "Running"
+          },
+          "aggregate": "count"
+        },
+        {
+          "metric_name": "crash_loop_pod_count",
+          "filter": {
+            "waiting_reason": "CrashLoopBackOff"
+          },
+          "aggregate": "count"
+        }
+      ]
+    },
+    "k8s.node_resources": {
+      "domain": "Compute",
+      "description": "Total node count, ready node count, and node pressure conditions.",
+      "default_frequency": "5 minutes",
+      "resource": "nodes",
+      "result_mapping": [
+        {
+          "metric_name": "total_nodes",
+          "aggregate": "count"
+        },
+        {
+          "metric_name": "node_pressure_count",
+          "filter": {
+            "condition": "pressure"
+          },
+          "aggregate": "count"
+        }
+      ]
+    },
+    "k8s.deployment_health": {
+      "domain": "Availability",
+      "description": "Total deployments and unavailable replica count across all namespaces.",
+      "default_frequency": "10 minutes",
+      "resource": "deployments",
+      "namespace": "all",
+      "result_mapping": [
+        {
+          "metric_name": "total_deployments",
+          "aggregate": "count"
+        },
+        {
+          "metric_name": "unavailable_replica_count",
+          "field": "status.unavailableReplicas",
+          "aggregate": "sum"
+        }
+      ]
+    }
+  },
+  "findings": {
+    "k8s_pod_crash_loop": {
+      "title": "Pod in CrashLoopBackOff",
+      "domain": "Availability",
+      "severity": "critical",
+      "condition": "crash_loop_pod_count > 0",
+      "threshold": "0",
+      "recommendation": "Inspect pod logs and events; check resource limits, liveness probes, and image pull errors.",
+      "metadata_json": {
+        "metric_name": "crash_loop_pod_count",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "k8s_node_resource_pressure": {
+      "title": "Node Resource Pressure",
+      "domain": "Compute",
+      "severity": "warning",
+      "condition": "node_pressure_count > 0",
+      "threshold": "0",
+      "recommendation": "Check node conditions for MemoryPressure, DiskPressure, or PIDPressure and drain if needed.",
+      "metadata_json": {
+        "metric_name": "node_pressure_count",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "k8s_deployment_replica_mismatch": {
+      "title": "Deployment Replica Mismatch",
+      "domain": "Availability",
+      "severity": "warning",
+      "condition": "unavailable_replica_count > 0",
+      "threshold": "0",
+      "recommendation": "Check deployment rollout status, pod scheduling failures, and image pull availability.",
+      "metadata_json": {
+        "metric_name": "unavailable_replica_count",
+        "operator": ">",
+        "threshold": 0
+      }
+    }
+  }
+}

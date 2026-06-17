@@ -1,0 +1,166 @@
+{
+  "key": "opsdb.windows",
+  "name": "Windows Infrastructure Monitoring",
+  "version": "1.0.0",
+  "author": "OpsDB Platform",
+  "description": "Monitor Windows servers via WinRM including CPU, memory, disk performance counters, event log error rates, and service health.",
+  "license_feature": "opsdb.windows",
+  "icon": "icon.svg",
+  "target_types": [
+    {
+      "id": "windows_server",
+      "display_name": "Windows Server / VM",
+      "category": "infrastructure",
+      "capabilities": {
+        "connection_protocol": "winrm",
+        "connection_schema": [
+          {
+            "key": "host",
+            "label": "Host / IP",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "winrm_port",
+            "label": "WinRM Port",
+            "type": "number",
+            "required": true,
+            "default": 5985
+          },
+          {
+            "key": "username",
+            "label": "Username",
+            "type": "text",
+            "required": true,
+            "default": "Administrator"
+          },
+          {
+            "key": "credential_ref",
+            "label": "Password Credential",
+            "type": "credential",
+            "required": true
+          },
+          {
+            "key": "use_ssl",
+            "label": "Use SSL (HTTPS)",
+            "type": "select",
+            "required": false,
+            "default": "no",
+            "options": [
+              "yes",
+              "no"
+            ]
+          },
+          {
+            "key": "domain",
+            "label": "Domain (optional)",
+            "type": "text",
+            "required": false
+          }
+        ],
+        "monitoring_pages": [
+          "Control Center",
+          "CPU",
+          "Memory",
+          "Disk",
+          "Services",
+          "Event Log",
+          "Network",
+          "Security Monitor",
+          "Best Practices",
+          "Alerts & Events",
+          "Findings Analysis",
+          "Runtime Collectors",
+          "Collector Frequencies",
+          "Log Diagnose",
+          "Report",
+          "Dashboard Info"
+        ],
+        "collectors": [
+          "windows.perf_counters",
+          "windows.event_log"
+        ],
+        "findings": [
+          "windows_cpu_usage_high",
+          "windows_disk_usage_high",
+          "windows_event_errors_high"
+        ],
+        "workflow_nodes": [
+          "run_windows_collector",
+          "evaluate_windows_findings"
+        ],
+        "dashboards": [
+          "windows_system_dashboard"
+        ],
+        "report_sections": [
+          "windows_health_summary"
+        ]
+      }
+    }
+  ],
+  "collector_meta": {
+    "windows.perf_counters": {
+      "domain": "Compute",
+      "description": "CPU usage, memory utilisation, and maximum disk usage via WinRM PowerShell.",
+      "default_frequency": "5 minutes",
+      "command": "$cpu=(Get-Counter '\\Processor(_Total)\\% Processor Time' -ErrorAction SilentlyContinue).CounterSamples[0].CookedValue;$os=Get-CimInstance Win32_OperatingSystem;$disks=Get-PSDrive -PSProvider FileSystem|Where-Object{$_.Used -ne $null};$maxDisk=($disks|ForEach-Object{if($_.Used+$_.Free -gt 0){[math]::Round($_.Used/($_.Used+$_.Free)*100,1)}}|Measure-Object -Maximum).Maximum;@{cpu_usage_percent=[math]::Round($cpu,1);memory_used_percent=[math]::Round(($os.TotalVisibleMemorySize-$os.FreePhysicalMemory)/$os.TotalVisibleMemorySize*100,1);memory_total_bytes=$os.TotalVisibleMemorySize*1024;disk_used_percent=$maxDisk}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "cpu_usage_percent": "percent",
+        "memory_used_percent": "percent",
+        "memory_total_bytes": "bytes",
+        "disk_used_percent": "percent"
+      }
+    },
+    "windows.event_log": {
+      "domain": "Availability",
+      "description": "Error and critical event count from System and Application logs in the past hour.",
+      "default_frequency": "10 minutes",
+      "command": "$errors=(Get-WinEvent -FilterHashtable @{LogName='System','Application';Level=1,2;StartTime=(Get-Date).AddHours(-1)} -ErrorAction SilentlyContinue).Count;@{event_error_count=if($errors){$errors}else{0}}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys"
+    }
+  },
+  "findings": {
+    "windows_cpu_usage_high": {
+      "title": "CPU Usage High",
+      "domain": "Compute",
+      "severity": "warning",
+      "condition": "cpu_usage_percent > 85",
+      "threshold": "85",
+      "recommendation": "Identify high-CPU services via Task Manager or perfmon and review scheduled tasks.",
+      "metadata_json": {
+        "metric_name": "cpu_usage_percent",
+        "operator": ">",
+        "threshold": 85
+      }
+    },
+    "windows_disk_usage_high": {
+      "title": "Disk Usage High",
+      "domain": "Storage",
+      "severity": "critical",
+      "condition": "disk_used_percent > 90",
+      "threshold": "90",
+      "recommendation": "Run Disk Cleanup, review Windows Update files, and archive or delete old logs.",
+      "metadata_json": {
+        "metric_name": "disk_used_percent",
+        "operator": ">",
+        "threshold": 90
+      }
+    },
+    "windows_event_errors_high": {
+      "title": "Event Log Errors High",
+      "domain": "Availability",
+      "severity": "warning",
+      "condition": "event_error_count > 50",
+      "threshold": "50",
+      "recommendation": "Review Windows Event Viewer for Application and System error sources.",
+      "metadata_json": {
+        "metric_name": "event_error_count",
+        "operator": ">",
+        "threshold": 50
+      }
+    }
+  }
+}

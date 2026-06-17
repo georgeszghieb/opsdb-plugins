@@ -1,0 +1,174 @@
+{
+  "key": "opsdb.sqlserver",
+  "name": "SQL Server Observability",
+  "version": "1.0.0",
+  "author": "OpsDB Platform",
+  "description": "Monitor Microsoft SQL Server instances including wait statistics, blocking queries, missing indexes, tempdb health, and log file usage.",
+  "license_feature": "opsdb.sqlserver",
+  "icon": "icon.svg",
+  "target_types": [
+    {
+      "id": "sqlserver",
+      "display_name": "SQL Server Database / Instance",
+      "category": "database",
+      "capabilities": {
+        "connection_protocol": "sqlserver",
+        "connection_schema": [
+          {
+            "key": "host",
+            "label": "Host / Instance",
+            "type": "text",
+            "required": true,
+            "placeholder": "sqlserver.example.com"
+          },
+          {
+            "key": "port",
+            "label": "Port",
+            "type": "number",
+            "required": true,
+            "default": 1433
+          },
+          {
+            "key": "database",
+            "label": "Database",
+            "type": "text",
+            "required": true,
+            "placeholder": "master"
+          },
+          {
+            "key": "user",
+            "label": "Username",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "credential_ref",
+            "label": "Password Credential",
+            "type": "credential",
+            "required": true
+          },
+          {
+            "key": "encrypt",
+            "label": "Encrypt",
+            "type": "select",
+            "required": false,
+            "default": "optional",
+            "options": [
+              "yes",
+              "no",
+              "optional"
+            ]
+          }
+        ],
+        "monitoring_pages": [
+          "Control Center",
+          "Always On / HA",
+          "Waits & Sessions",
+          "Blocking",
+          "Query Performance",
+          "Execution Plan Analyzer",
+          "TempDB",
+          "Storage",
+          "Backup & Jobs",
+          "Security Monitor",
+          "Best Practices",
+          "Alerts & Events",
+          "Findings Analysis",
+          "Runtime Collectors",
+          "Collector Frequencies",
+          "SQL Diagnose",
+          "Log Diagnose",
+          "Report",
+          "Dashboard Info"
+        ],
+        "collectors": [
+          "sqlserver.db_stats",
+          "sqlserver.wait_stats",
+          "sqlserver.missing_indexes"
+        ],
+        "findings": [
+          "sqlserver_wait_time_high",
+          "sqlserver_missing_index_count_high",
+          "sqlserver_log_file_size_high"
+        ],
+        "workflow_nodes": [
+          "run_sqlserver_collector",
+          "evaluate_sqlserver_findings"
+        ],
+        "dashboards": [
+          "sqlserver_control_center"
+        ],
+        "report_sections": [
+          "sqlserver_health_summary"
+        ]
+      }
+    }
+  ],
+  "collector_meta": {
+    "sqlserver.db_stats": {
+      "domain": "Performance",
+      "description": "Online database count, read-only and standby state counts.",
+      "default_frequency": "15 minutes",
+      "query": "SELECT COUNT(*) AS total_dbs, SUM(CAST(is_read_only AS INT)) AS readonly_dbs, SUM(CAST(is_in_standby AS INT)) AS standby_dbs FROM sys.databases WHERE state_desc = 'ONLINE'",
+      "result_mapping": "columns"
+    },
+    "sqlserver.wait_stats": {
+      "domain": "Performance",
+      "description": "Average wait time and total waiting tasks from sys.dm_os_wait_stats.",
+      "default_frequency": "15 minutes",
+      "query": "SELECT SUM(wait_time_ms) / NULLIF(SUM(waiting_tasks_count), 0) AS avg_wait_time_ms, SUM(waiting_tasks_count) AS total_waiting_tasks FROM sys.dm_os_wait_stats WHERE wait_type NOT IN ('SLEEP_TASK','BROKER_TO_FLUSH','BROKER_TASK_STOP','CLR_AUTO_EVENT','REQUEST_FOR_DEADLOCK_SEARCH','RESOURCE_QUEUE','SERVER_IDLE_CHECK','SLEEP_DBSTARTUP','SLEEP_DBRECOVER','SLEEP_DBTASK','SLEEP_TEMPDBSTARTUP','SNI_HTTP_ACCEPT','SP_SERVER_DIAGNOSTICS_SLEEP','WAITFOR','XE_DISPATCHER_WAIT','XE_TIMER_EVENT')",
+      "result_mapping": "columns",
+      "units": {
+        "avg_wait_time_ms": "ms"
+      }
+    },
+    "sqlserver.missing_indexes": {
+      "domain": "Performance",
+      "description": "Missing index count from sys.dm_db_missing_index_details.",
+      "default_frequency": "30 minutes",
+      "query": "SELECT COUNT(*) AS missing_index_count FROM sys.dm_db_missing_index_details",
+      "result_mapping": "columns"
+    }
+  },
+  "findings": {
+    "sqlserver_wait_time_high": {
+      "title": "SQL Server Wait Time High",
+      "domain": "Performance",
+      "severity": "warning",
+      "condition": "avg_wait_time_ms > 500",
+      "threshold": "500",
+      "recommendation": "Investigate top wait types, review index fragmentation, and check for blocking queries.",
+      "metadata_json": {
+        "metric_name": "avg_wait_time_ms",
+        "operator": ">",
+        "threshold": 500
+      }
+    },
+    "sqlserver_missing_index_count_high": {
+      "title": "Missing Index Count High",
+      "domain": "Performance",
+      "severity": "warning",
+      "condition": "missing_index_count > 10",
+      "threshold": "10",
+      "recommendation": "Review missing index DMVs and evaluate adding recommended indexes for high-impact queries.",
+      "metadata_json": {
+        "metric_name": "missing_index_count",
+        "operator": ">",
+        "threshold": 10
+      }
+    },
+    "sqlserver_log_file_size_high": {
+      "title": "Log File Size High",
+      "domain": "Storage",
+      "severity": "warning",
+      "condition": "log_used_percent > 80",
+      "threshold": "80",
+      "recommendation": "Check log backup frequency, identify long-running transactions, and review recovery model.",
+      "metadata_json": {
+        "metric_name": "log_used_percent",
+        "operator": ">",
+        "threshold": 80
+      }
+    }
+  }
+}
