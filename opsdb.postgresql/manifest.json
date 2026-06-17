@@ -1,9 +1,9 @@
 {
   "key": "opsdb.postgresql",
   "name": "PostgreSQL Observability",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "author": "OpsDB Platform",
-  "description": "Monitor PostgreSQL databases including performance metrics, connection activity, query analysis, storage health, vacuum state, and replication lag.",
+  "description": "Monitor PostgreSQL 17 databases: availability, sessions, blocking, replication, WAL, vacuum, indexes, security, and query performance.",
   "license_feature": "opsdb.postgresql",
   "icon": "icon.svg",
   "target_types": [
@@ -92,14 +92,68 @@
           "Dashboard Info"
         ],
         "collectors": [
-          "postgres.activity_locks",
-          "postgres.global_stats",
-          "postgres.storage_vacuum"
+          "pg17_availability",
+          "pg17_activity_sessions",
+          "pg17_session_details",
+          "pg17_blocking_locks",
+          "pg17_long_transactions",
+          "pg17_database_stats",
+          "pg17_io_stats",
+          "pg17_wal_stats",
+          "pg17_checkpoint_bgwriter",
+          "pg17_physical_replication",
+          "pg17_wal_receiver",
+          "pg17_replication_slots",
+          "pg17_subscription_status",
+          "pg17_subscription_table_sync",
+          "pg17_table_vacuum_pressure",
+          "pg17_vacuum_progress",
+          "pg17_analyze_progress",
+          "pg17_index_usage",
+          "pg17_table_sizes",
+          "pg17_database_sizes",
+          "pg17_top_queries_pg_stat_statements",
+          "pg17_query_temp_spills",
+          "pg17_configuration_baseline",
+          "pg17_extension_inventory",
+          "pg17_role_security",
+          "pg17_database_privileges",
+          "pg17_autovacuum_activity",
+          "pg17_prepared_transactions",
+          "pg17_invalid_indexes",
+          "pg17_partition_overview"
         ],
         "findings": [
-          "cache_hit_ratio_low",
-          "dead_tuples_high",
-          "replication_lag_high"
+          "pg17_connection_usage_warning",
+          "pg17_connection_usage_critical",
+          "pg17_idle_in_transaction_warning",
+          "pg17_idle_in_transaction_critical",
+          "pg17_waiting_sessions_detected",
+          "pg17_long_active_query_warning",
+          "pg17_long_active_query_critical",
+          "pg17_blocking_lock_detected",
+          "pg17_blocking_lock_prolonged",
+          "pg17_long_transaction_warning",
+          "pg17_long_transaction_critical",
+          "pg17_cache_hit_low_warning",
+          "pg17_cache_hit_low_critical",
+          "pg17_deadlocks_detected",
+          "pg17_replication_lag_bytes_warning",
+          "pg17_replication_lag_bytes_critical",
+          "pg17_replication_lag_seconds_warning",
+          "pg17_replication_lag_seconds_critical",
+          "pg17_inactive_replication_slot",
+          "pg17_retained_wal_warning",
+          "pg17_retained_wal_critical",
+          "pg17_checkpoint_ratio_warning",
+          "pg17_checkpoint_ratio_critical",
+          "pg17_dead_tuple_pct_warning",
+          "pg17_dead_tuple_pct_critical",
+          "pg17_old_prepared_transaction_warning",
+          "pg17_old_prepared_transaction_critical",
+          "pg17_invalid_index_found",
+          "pg17_superuser_count_high",
+          "pg17_settings_pending_restart"
         ],
         "workflow_nodes": [
           "run_postgres_collector",
@@ -115,16 +169,272 @@
     }
   ],
   "collector_meta": {
+    "pg17_availability": {
+      "domain": "Availability",
+      "description": "Server version number, standby status (0=primary,1=standby), and uptime in seconds.",
+      "default_frequency": "1 minute",
+      "query": "SELECT current_setting('server_version_num')::int AS server_version_num, pg_is_in_recovery()::int AS is_standby, EXTRACT(EPOCH FROM (now() - pg_postmaster_start_time()))::numeric AS uptime_seconds",
+      "units": {
+        "uptime_seconds": "seconds"
+      }
+    },
+    "pg17_activity_sessions": {
+      "domain": "Activity",
+      "description": "Session breakdown: total, active, idle, idle-in-transaction, waiting; connection usage percentage versus max_connections.",
+      "default_frequency": "1 minute",
+      "query": "WITH s AS (SELECT setting::int AS max_connections FROM pg_settings WHERE name = 'max_connections') SELECT count(*) AS total_sessions, count(*) FILTER (WHERE state = 'active') AS active_sessions, count(*) FILTER (WHERE state = 'idle') AS idle_sessions, count(*) FILTER (WHERE state = 'idle in transaction') AS idle_in_transaction_sessions, count(*) FILTER (WHERE state = 'idle in transaction (aborted)') AS idle_in_transaction_aborted_sessions, count(*) FILTER (WHERE wait_event IS NOT NULL) AS waiting_sessions, s.max_connections, round((count(*)::numeric / NULLIF(s.max_connections, 0)) * 100, 2) AS connection_usage_pct FROM pg_stat_activity a CROSS JOIN s WHERE a.pid <> pg_backend_pid() GROUP BY s.max_connections",
+      "units": {
+        "connection_usage_pct": "percent"
+      }
+    },
+    "pg17_session_details": {
+      "domain": "Activity",
+      "description": "Aggregate risk metrics for active and risky sessions: longest active query (seconds), longest idle-in-transaction (seconds), longest wait (seconds).",
+      "default_frequency": "1 minute",
+      "query": "SELECT count(*) AS risky_session_count, count(*) FILTER (WHERE state = 'active') AS long_active_count, COALESCE(EXTRACT(EPOCH FROM max(now() - query_start) FILTER (WHERE state = 'active')), 0)::numeric AS max_active_query_seconds, COALESCE(EXTRACT(EPOCH FROM max(now() - xact_start) FILTER (WHERE state LIKE 'idle in transaction%')), 0)::numeric AS max_idle_xact_seconds, COALESCE(EXTRACT(EPOCH FROM max(now() - query_start) FILTER (WHERE wait_event IS NOT NULL)), 0)::numeric AS max_wait_seconds FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND (state = 'active' OR state LIKE 'idle in transaction%' OR wait_event IS NOT NULL)",
+      "units": {
+        "max_active_query_seconds": "seconds",
+        "max_idle_xact_seconds": "seconds",
+        "max_wait_seconds": "seconds"
+      }
+    },
+    "pg17_blocking_locks": {
+      "domain": "Locks",
+      "description": "Count of blocked backend processes and the worst blocked duration in seconds.",
+      "default_frequency": "1 minute",
+      "query": "SELECT count(*) AS blocking_count, COALESCE(EXTRACT(EPOCH FROM max(now() - blocked.query_start))::numeric, 0) AS max_blocked_duration_seconds FROM pg_stat_activity blocked JOIN pg_locks blocked_locks ON blocked_locks.pid = blocked.pid WHERE NOT blocked_locks.granted",
+      "units": {
+        "max_blocked_duration_seconds": "seconds"
+      }
+    },
+    "pg17_long_transactions": {
+      "domain": "Activity",
+      "description": "Count of transactions open longer than 15 minutes and the age of the oldest one in seconds.",
+      "default_frequency": "5 minutes",
+      "query": "SELECT count(*) AS long_transaction_count, COALESCE(EXTRACT(EPOCH FROM max(now() - xact_start))::numeric, 0) AS max_transaction_age_seconds FROM pg_stat_activity WHERE xact_start IS NOT NULL AND now() - xact_start > interval '15 minutes' AND pid <> pg_backend_pid()",
+      "units": {
+        "max_transaction_age_seconds": "seconds"
+      }
+    },
+    "pg17_database_stats": {
+      "domain": "Performance",
+      "description": "Buffer cache hit percentage, temp file usage, deadlock count, commit/rollback counts for the current database.",
+      "default_frequency": "5 minutes",
+      "query": "SELECT blks_read, blks_hit, round(blks_hit::numeric / NULLIF(blks_hit + blks_read, 0) * 100, 2) AS cache_hit_pct, temp_files, temp_bytes, deadlocks, xact_commit, xact_rollback FROM pg_stat_database WHERE datname = current_database()",
+      "units": {
+        "cache_hit_pct": "percent",
+        "temp_bytes": "bytes"
+      }
+    },
+    "pg17_io_stats": {
+      "domain": "I/O",
+      "description": "Aggregated I/O read/write counts, timing in ms, evictions, and buffer hits across all I/O backends (requires track_io_timing = on).",
+      "default_frequency": "5 minutes",
+      "query": "SELECT COALESCE(SUM(reads), 0) AS total_reads, COALESCE(SUM(writes), 0) AS total_writes, COALESCE(SUM(read_time), 0) AS total_read_time_ms, COALESCE(SUM(write_time), 0) AS total_write_time_ms, COALESCE(SUM(evictions), 0) AS total_evictions, COALESCE(SUM(hits), 0) AS total_hits FROM pg_stat_io",
+      "units": {
+        "total_read_time_ms": "ms",
+        "total_write_time_ms": "ms"
+      }
+    },
+    "pg17_wal_stats": {
+      "domain": "WAL",
+      "description": "WAL record count, full-page images, bytes generated, and WAL buffer full count from pg_stat_wal (PostgreSQL 17+).",
+      "default_frequency": "5 minutes",
+      "query": "SELECT wal_records, wal_fpi, wal_bytes, wal_buffers_full FROM pg_stat_wal",
+      "units": {
+        "wal_bytes": "bytes"
+      }
+    },
+    "pg17_checkpoint_bgwriter": {
+      "domain": "Checkpoints",
+      "description": "Checkpoint counts (timed vs requested), write/sync timing, buffer stats, and percentage of demand-triggered checkpoints. Uses pg_stat_checkpointer + pg_stat_bgwriter (PostgreSQL 17+).",
+      "default_frequency": "5 minutes",
+      "query": "SELECT c.num_timed AS checkpoints_timed, c.num_requested AS checkpoints_requested, c.write_time AS checkpoint_write_time_ms, c.sync_time AS checkpoint_sync_time_ms, c.buffers_written AS buffers_checkpoint, b.buffers_clean, b.maxwritten_clean, b.buffers_alloc, round(c.num_requested::numeric / NULLIF(c.num_timed + c.num_requested, 0) * 100, 2) AS requested_checkpoint_pct FROM pg_stat_checkpointer c, pg_stat_bgwriter b",
+      "units": {
+        "checkpoint_write_time_ms": "ms",
+        "checkpoint_sync_time_ms": "ms",
+        "requested_checkpoint_pct": "percent"
+      }
+    },
+    "pg17_physical_replication": {
+      "domain": "Replication",
+      "description": "Count of standbys, streaming standbys, maximum replay lag in bytes and seconds.",
+      "default_frequency": "1 minute",
+      "query": "SELECT count(*) AS replication_standby_count, count(*) FILTER (WHERE state = 'streaming') AS replication_streaming_count, COALESCE(max(pg_wal_lsn_diff(sent_lsn, replay_lsn)), 0) AS max_replay_lag_bytes, COALESCE(EXTRACT(EPOCH FROM max(replay_lag))::numeric, 0) AS max_replay_lag_seconds FROM pg_stat_replication",
+      "units": {
+        "max_replay_lag_bytes": "bytes",
+        "max_replay_lag_seconds": "seconds"
+      }
+    },
+    "pg17_wal_receiver": {
+      "domain": "Replication",
+      "description": "WAL receiver count and streaming receiver count (standby-side view).",
+      "default_frequency": "1 minute",
+      "query": "SELECT count(*) AS wal_receiver_count, count(*) FILTER (WHERE status = 'streaming') AS wal_receiver_streaming_count FROM pg_stat_wal_receiver"
+    },
+    "pg17_replication_slots": {
+      "domain": "Replication",
+      "description": "Total, active, and inactive replication slot counts; maximum retained WAL bytes across all slots.",
+      "default_frequency": "5 minutes",
+      "query": "SELECT count(*) AS total_slots, count(*) FILTER (WHERE active) AS active_slots, count(*) FILTER (WHERE NOT active) AS inactive_slots, COALESCE(max(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)), 0) AS max_retained_wal_bytes FROM pg_replication_slots",
+      "units": {
+        "max_retained_wal_bytes": "bytes"
+      }
+    },
+    "pg17_subscription_status": {
+      "domain": "Replication",
+      "description": "Logical replication subscription count, running subscriptions, and maximum receive lag in bytes.",
+      "default_frequency": "5 minutes",
+      "query": "SELECT count(*) AS subscription_count, count(*) FILTER (WHERE pid IS NOT NULL) AS running_subscriptions, COALESCE(max(pg_wal_lsn_diff(latest_end_lsn, received_lsn)), 0) AS max_receive_lag_bytes FROM pg_stat_subscription",
+      "units": {
+        "max_receive_lag_bytes": "bytes"
+      }
+    },
+    "pg17_subscription_table_sync": {
+      "domain": "Replication",
+      "description": "Total subscribed tables, tables in ready state, and tables still synchronising.",
+      "default_frequency": "15 minutes",
+      "query": "SELECT count(*) AS total_tables, count(*) FILTER (WHERE srsubstate = 'r') AS ready_tables, count(*) FILTER (WHERE srsubstate <> 'r') AS syncing_tables FROM pg_subscription_rel"
+    },
+    "pg17_table_vacuum_pressure": {
+      "domain": "Vacuum",
+      "description": "Tables with dead tuples, count with dead tuple ratio >= 20%, maximum dead tuple percentage, and total dead tuples.",
+      "default_frequency": "15 minutes",
+      "query": "SELECT count(*) AS tables_with_dead_tuples, count(*) FILTER (WHERE round(n_dead_tup::numeric / NULLIF(n_live_tup + n_dead_tup, 0) * 100, 2) >= 20) AS tables_high_dead_pct, COALESCE(max(round(n_dead_tup::numeric / NULLIF(n_live_tup + n_dead_tup, 0) * 100, 2)), 0) AS max_dead_tuple_pct, COALESCE(sum(n_dead_tup), 0) AS total_dead_tuples FROM pg_stat_user_tables WHERE n_live_tup + n_dead_tup > 0",
+      "units": {
+        "max_dead_tuple_pct": "percent"
+      }
+    },
+    "pg17_vacuum_progress": {
+      "domain": "Vacuum",
+      "description": "Count of actively running VACUUM operations and the maximum heap scan progress percentage.",
+      "default_frequency": "5 minutes",
+      "query": "SELECT count(*) AS active_vacuum_count, COALESCE(max(round(heap_blks_scanned::numeric / NULLIF(heap_blks_total, 0) * 100, 2)), 0) AS max_vacuum_progress_pct FROM pg_stat_progress_vacuum",
+      "units": {
+        "max_vacuum_progress_pct": "percent"
+      }
+    },
+    "pg17_analyze_progress": {
+      "domain": "Vacuum",
+      "description": "Count of actively running ANALYZE operations.",
+      "default_frequency": "5 minutes",
+      "query": "SELECT count(*) AS active_analyze_count FROM pg_stat_progress_analyze"
+    },
+    "pg17_index_usage": {
+      "domain": "Indexes",
+      "description": "Total user indexes, count of unused (zero-scan) indexes, and total wasted space in unused indexes in bytes.",
+      "default_frequency": "1 hour",
+      "query": "SELECT count(*) AS total_user_indexes, count(*) FILTER (WHERE idx_scan = 0) AS unused_indexes, COALESCE(sum(CASE WHEN idx_scan = 0 THEN pg_relation_size(indexrelid) ELSE 0 END), 0) AS unused_index_size_bytes FROM pg_stat_user_indexes",
+      "units": {
+        "unused_index_size_bytes": "bytes"
+      }
+    },
+    "pg17_table_sizes": {
+      "domain": "Storage",
+      "description": "Total user table count, combined size in bytes, and size of the largest single table in bytes.",
+      "default_frequency": "1 hour",
+      "query": "SELECT count(*) AS total_tables, COALESCE(sum(pg_total_relation_size(c.oid)), 0) AS total_size_bytes, COALESCE(max(pg_total_relation_size(c.oid)), 0) AS largest_table_bytes FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r', 'p', 'm') AND n.nspname NOT IN ('pg_catalog', 'information_schema')",
+      "units": {
+        "total_size_bytes": "bytes",
+        "largest_table_bytes": "bytes"
+      }
+    },
+    "pg17_database_sizes": {
+      "domain": "Storage",
+      "description": "Current database total size in bytes.",
+      "default_frequency": "1 hour",
+      "query": "SELECT pg_database_size(current_database()) AS current_database_size_bytes",
+      "units": {
+        "current_database_size_bytes": "bytes"
+      }
+    },
+    "pg17_top_queries_pg_stat_statements": {
+      "domain": "Query Performance",
+      "description": "Tracked query count, maximum mean execution time in ms, and total temp block spill in MB (requires pg_stat_statements extension).",
+      "default_frequency": "5 minutes",
+      "query": "SELECT count(*) AS tracked_query_count, COALESCE(max(mean_exec_time), 0) AS max_mean_exec_time_ms, COALESCE(sum((temp_blks_read + temp_blks_written) * 8.0 / 1024), 0) AS total_temp_spill_mb FROM pg_stat_statements",
+      "units": {
+        "max_mean_exec_time_ms": "ms",
+        "total_temp_spill_mb": "MB"
+      }
+    },
+    "pg17_query_temp_spills": {
+      "domain": "Query Performance",
+      "description": "Count of queries with any temp block usage and the maximum temp spill for a single query in MB (requires pg_stat_statements).",
+      "default_frequency": "5 minutes",
+      "query": "SELECT count(*) FILTER (WHERE temp_blks_read + temp_blks_written > 0) AS queries_with_temp_spill, COALESCE(max((temp_blks_read + temp_blks_written) * 8.0 / 1024), 0) AS max_temp_spill_mb FROM pg_stat_statements",
+      "units": {
+        "max_temp_spill_mb": "MB"
+      }
+    },
+    "pg17_configuration_baseline": {
+      "domain": "Configuration",
+      "description": "Count of key GUC settings that require a server restart to take effect.",
+      "default_frequency": "1 hour",
+      "query": "SELECT count(*) FILTER (WHERE pending_restart) AS settings_pending_restart FROM pg_settings WHERE name IN ('max_connections','shared_buffers','work_mem','maintenance_work_mem','autovacuum','wal_level','max_wal_size','checkpoint_timeout','synchronous_commit','shared_preload_libraries','track_io_timing')"
+    },
+    "pg17_extension_inventory": {
+      "domain": "Configuration",
+      "description": "Total number of installed PostgreSQL extensions.",
+      "default_frequency": "24 hours",
+      "query": "SELECT count(*) AS installed_extensions_count FROM pg_extension"
+    },
+    "pg17_role_security": {
+      "domain": "Security",
+      "description": "Total roles, superuser count, replication-only role count, and expired login role count.",
+      "default_frequency": "1 hour",
+      "query": "SELECT count(*) AS total_roles, count(*) FILTER (WHERE rolsuper) AS superuser_count, count(*) FILTER (WHERE rolreplication AND NOT rolsuper) AS replication_only_role_count, count(*) FILTER (WHERE rolcanlogin AND rolvaliduntil < now()) AS expired_login_role_count FROM pg_roles"
+    },
+    "pg17_database_privileges": {
+      "domain": "Security",
+      "description": "Total database count and number of non-template user databases.",
+      "default_frequency": "24 hours",
+      "query": "SELECT count(*) AS total_databases, count(*) FILTER (WHERE NOT datistemplate) AS user_databases_count FROM pg_database"
+    },
+    "pg17_autovacuum_activity": {
+      "domain": "Vacuum",
+      "description": "Count of active autovacuum worker processes and age of the longest-running autovacuum in seconds.",
+      "default_frequency": "5 minutes",
+      "query": "SELECT count(*) AS active_autovacuum_count, COALESCE(EXTRACT(EPOCH FROM max(now() - query_start))::numeric, 0) AS max_autovacuum_age_seconds FROM pg_stat_activity WHERE (backend_type ILIKE '%autovacuum%' OR query ILIKE 'autovacuum:%') AND state IS NOT NULL",
+      "units": {
+        "max_autovacuum_age_seconds": "seconds"
+      }
+    },
+    "pg17_prepared_transactions": {
+      "domain": "Activity",
+      "description": "Count of prepared (two-phase commit) transactions and age of the oldest one in seconds.",
+      "default_frequency": "5 minutes",
+      "query": "SELECT count(*) AS prepared_transaction_count, COALESCE(EXTRACT(EPOCH FROM max(now() - prepared))::numeric, 0) AS max_prepared_age_seconds FROM pg_prepared_xacts",
+      "units": {
+        "max_prepared_age_seconds": "seconds"
+      }
+    },
+    "pg17_invalid_indexes": {
+      "domain": "Indexes",
+      "description": "Count of invalid or not-ready indexes and their total wasted disk space in bytes.",
+      "default_frequency": "15 minutes",
+      "query": "SELECT count(*) AS invalid_index_count, COALESCE(sum(pg_relation_size(c.oid)), 0) AS invalid_index_total_bytes FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE NOT i.indisvalid OR NOT i.indisready",
+      "units": {
+        "invalid_index_total_bytes": "bytes"
+      }
+    },
+    "pg17_partition_overview": {
+      "domain": "Storage",
+      "description": "Count of partitioned tables and the maximum number of partitions on a single table.",
+      "default_frequency": "1 hour",
+      "query": "SELECT count(*) AS partitioned_table_count, COALESCE(max(child_count), 0) AS max_partition_count FROM (SELECT c.oid, count(child.inhrelid) AS child_count FROM pg_class c LEFT JOIN pg_inherits child ON child.inhparent = c.oid WHERE c.relkind = 'p' GROUP BY c.oid) t",
+      "result_mapping": "columns"
+    },
     "postgres.activity_locks": {
       "domain": "Activity",
-      "description": "Active sessions, waiting sessions, idle-in-transaction, and blocked lock counts.",
+      "description": "[Legacy v1.0] Active sessions, waiting sessions, idle-in-transaction, and blocked lock counts.",
       "default_frequency": "5 minutes",
       "query": "SELECT count(*) FILTER (WHERE state = 'active') AS active_sessions, count(*) FILTER (WHERE wait_event_type IS NOT NULL) AS waiting_sessions, count(*) FILTER (WHERE state = 'idle in transaction') AS idle_in_transaction_sessions, (SELECT count(*) FROM pg_locks WHERE NOT granted) AS blocked_locks FROM pg_stat_activity",
       "result_mapping": "columns"
     },
     "postgres.global_stats": {
       "domain": "Performance",
-      "description": "Cache hit ratio, transaction counts, deadlocks, temp usage, database size, and XID age.",
+      "description": "[Legacy v1.0] Cache hit ratio, transaction counts, deadlocks, temp usage, database size, and XID age.",
       "default_frequency": "15 minutes",
       "query": "SELECT coalesce(d.numbackends, 0) AS active_sessions, coalesce(d.xact_commit + d.xact_rollback, 0) AS total_transactions, CASE WHEN coalesce(d.blks_hit + d.blks_read, 0) = 0 THEN 0 ELSE round((d.blks_hit::numeric * 100.0) / nullif(d.blks_hit + d.blks_read, 0), 2) END AS cache_hit_percent, coalesce(d.deadlocks, 0) AS deadlocks, coalesce(d.temp_files, 0) AS temp_files, coalesce(d.temp_bytes, 0) AS temp_bytes, pg_database_size(current_database()) AS current_database_size_bytes, age(pg.datfrozenxid) AS max_freeze_age FROM pg_stat_database d JOIN pg_database pg ON pg.datname = d.datname WHERE d.datname = current_database()",
       "result_mapping": "columns",
@@ -136,7 +446,7 @@
     },
     "postgres.storage_vacuum": {
       "domain": "Storage & Vacuum",
-      "description": "Live/dead tuple counts, dead tuple percentage, and vacuum/autovacuum run counts.",
+      "description": "[Legacy v1.0] Live/dead tuple counts, dead tuple percentage, and vacuum/autovacuum run counts.",
       "default_frequency": "15 minutes",
       "query": "SELECT coalesce(sum(n_live_tup), 0) AS live_tuples, coalesce(sum(n_dead_tup), 0) AS dead_tuples, CASE WHEN coalesce(sum(n_live_tup + n_dead_tup), 0) = 0 THEN 0 ELSE round((sum(n_dead_tup)::numeric * 100.0) / nullif(sum(n_live_tup + n_dead_tup), 0), 2) END AS dead_tuple_percent, coalesce(sum(vacuum_count), 0) AS vacuum_count, coalesce(sum(autovacuum_count), 0) AS autovacuum_count FROM pg_stat_user_tables",
       "result_mapping": "columns",
@@ -146,8 +456,398 @@
     }
   },
   "findings": {
+    "pg17_connection_usage_warning": {
+      "title": "Connection Usage High (Warning)",
+      "domain": "Availability",
+      "severity": "warning",
+      "condition": "connection_usage_pct >= 70",
+      "threshold": "70",
+      "recommendation": "Review active and idle connections. Consider connection pooling (PgBouncer) and tuning max_connections.",
+      "metadata_json": {
+        "metric_name": "connection_usage_pct",
+        "operator": ">=",
+        "threshold": 70
+      }
+    },
+    "pg17_connection_usage_critical": {
+      "title": "Connection Usage Critical",
+      "domain": "Availability",
+      "severity": "critical",
+      "condition": "connection_usage_pct >= 90",
+      "threshold": "90",
+      "recommendation": "Immediate action required: nearly all connections are consumed. Terminate idle connections or enable connection pooling.",
+      "metadata_json": {
+        "metric_name": "connection_usage_pct",
+        "operator": ">=",
+        "threshold": 90
+      }
+    },
+    "pg17_idle_in_transaction_warning": {
+      "title": "Idle-in-Transaction Sessions Detected",
+      "domain": "Activity",
+      "severity": "warning",
+      "condition": "idle_in_transaction_sessions > 0",
+      "threshold": "0",
+      "recommendation": "Sessions holding open transactions block vacuuming and lock resources. Set idle_in_transaction_session_timeout in postgresql.conf.",
+      "metadata_json": {
+        "metric_name": "idle_in_transaction_sessions",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "pg17_idle_in_transaction_critical": {
+      "title": "High Idle-in-Transaction Session Count",
+      "domain": "Activity",
+      "severity": "critical",
+      "condition": "idle_in_transaction_sessions >= 10",
+      "threshold": "10",
+      "recommendation": "Many sessions are stuck in open transactions. Investigate application connection management and terminate stale backends.",
+      "metadata_json": {
+        "metric_name": "idle_in_transaction_sessions",
+        "operator": ">=",
+        "threshold": 10
+      }
+    },
+    "pg17_waiting_sessions_detected": {
+      "title": "Waiting Sessions Detected",
+      "domain": "Activity",
+      "severity": "warning",
+      "condition": "waiting_sessions > 5",
+      "threshold": "5",
+      "recommendation": "Multiple sessions are waiting on events or locks. Investigate pg_stat_activity for wait_event details.",
+      "metadata_json": {
+        "metric_name": "waiting_sessions",
+        "operator": ">",
+        "threshold": 5
+      }
+    },
+    "pg17_long_active_query_warning": {
+      "title": "Long-Running Active Query (15+ min)",
+      "domain": "Activity",
+      "severity": "warning",
+      "condition": "max_active_query_seconds >= 900",
+      "threshold": "900",
+      "recommendation": "A query has been running for over 15 minutes. Review pg_stat_activity and consider using statement_timeout.",
+      "metadata_json": {
+        "metric_name": "max_active_query_seconds",
+        "operator": ">=",
+        "threshold": 900
+      }
+    },
+    "pg17_long_active_query_critical": {
+      "title": "Long-Running Active Query (1+ hour)",
+      "domain": "Activity",
+      "severity": "critical",
+      "condition": "max_active_query_seconds >= 3600",
+      "threshold": "3600",
+      "recommendation": "A query has been running for over 1 hour. Investigate and consider terminating via pg_terminate_backend().",
+      "metadata_json": {
+        "metric_name": "max_active_query_seconds",
+        "operator": ">=",
+        "threshold": 3600
+      }
+    },
+    "pg17_blocking_lock_detected": {
+      "title": "Blocking Lock Detected",
+      "domain": "Locks",
+      "severity": "warning",
+      "condition": "blocking_count > 0",
+      "threshold": "0",
+      "recommendation": "At least one backend is blocked waiting for a lock. Identify blocking PIDs in pg_blocking_pids() and evaluate if they should be terminated.",
+      "metadata_json": {
+        "metric_name": "blocking_count",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "pg17_blocking_lock_prolonged": {
+      "title": "Prolonged Blocking Lock (15+ min)",
+      "domain": "Locks",
+      "severity": "critical",
+      "condition": "max_blocked_duration_seconds >= 900",
+      "threshold": "900",
+      "recommendation": "A backend has been blocked for over 15 minutes. Consider terminating the blocking transaction to restore throughput.",
+      "metadata_json": {
+        "metric_name": "max_blocked_duration_seconds",
+        "operator": ">=",
+        "threshold": 900
+      }
+    },
+    "pg17_long_transaction_warning": {
+      "title": "Long Open Transaction (15+ min)",
+      "domain": "Activity",
+      "severity": "warning",
+      "condition": "max_transaction_age_seconds >= 900",
+      "threshold": "900",
+      "recommendation": "A transaction has been open for over 15 minutes. Long transactions prevent autovacuum from reclaiming dead tuples.",
+      "metadata_json": {
+        "metric_name": "max_transaction_age_seconds",
+        "operator": ">=",
+        "threshold": 900
+      }
+    },
+    "pg17_long_transaction_critical": {
+      "title": "Long Open Transaction (1+ hour)",
+      "domain": "Activity",
+      "severity": "critical",
+      "condition": "max_transaction_age_seconds >= 3600",
+      "threshold": "3600",
+      "recommendation": "A transaction has been open for over 1 hour. This can cause table bloat and XID wraparound issues. Investigate and terminate if stale.",
+      "metadata_json": {
+        "metric_name": "max_transaction_age_seconds",
+        "operator": ">=",
+        "threshold": 3600
+      }
+    },
+    "pg17_cache_hit_low_warning": {
+      "title": "Cache Hit Rate Below 95%",
+      "domain": "Performance",
+      "severity": "warning",
+      "condition": "cache_hit_pct < 95",
+      "threshold": "95",
+      "recommendation": "Buffer cache hit rate is low. Consider increasing shared_buffers or reviewing query access patterns.",
+      "metadata_json": {
+        "metric_name": "cache_hit_pct",
+        "operator": "<",
+        "threshold": 95
+      }
+    },
+    "pg17_cache_hit_low_critical": {
+      "title": "Cache Hit Rate Below 90%",
+      "domain": "Performance",
+      "severity": "critical",
+      "condition": "cache_hit_pct < 90",
+      "threshold": "90",
+      "recommendation": "Critical: most reads are going to disk. Urgently review shared_buffers, indexes, and query plans.",
+      "metadata_json": {
+        "metric_name": "cache_hit_pct",
+        "operator": "<",
+        "threshold": 90
+      }
+    },
+    "pg17_deadlocks_detected": {
+      "title": "Deadlocks Detected",
+      "domain": "Activity",
+      "severity": "warning",
+      "condition": "deadlocks > 0",
+      "threshold": "0",
+      "recommendation": "Deadlocks indicate conflicting lock acquisition order. Review application transaction patterns and use consistent lock ordering.",
+      "metadata_json": {
+        "metric_name": "deadlocks",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "pg17_replication_lag_bytes_warning": {
+      "title": "Replication Replay Lag High (1 GB+)",
+      "domain": "Replication",
+      "severity": "warning",
+      "condition": "max_replay_lag_bytes >= 1073741824",
+      "threshold": "1073741824",
+      "recommendation": "Standby is more than 1 GB behind the primary. Check network throughput, standby CPU, and replication slot health.",
+      "metadata_json": {
+        "metric_name": "max_replay_lag_bytes",
+        "operator": ">=",
+        "threshold": 1073741824
+      }
+    },
+    "pg17_replication_lag_bytes_critical": {
+      "title": "Replication Replay Lag Critical (5 GB+)",
+      "domain": "Replication",
+      "severity": "critical",
+      "condition": "max_replay_lag_bytes >= 5368709120",
+      "threshold": "5368709120",
+      "recommendation": "Standby is more than 5 GB behind. Failover RPO is at serious risk. Investigate immediately.",
+      "metadata_json": {
+        "metric_name": "max_replay_lag_bytes",
+        "operator": ">=",
+        "threshold": 5368709120
+      }
+    },
+    "pg17_replication_lag_seconds_warning": {
+      "title": "Replication Apply Lag High (30+ seconds)",
+      "domain": "Replication",
+      "severity": "warning",
+      "condition": "max_replay_lag_seconds >= 30",
+      "threshold": "30",
+      "recommendation": "Standby apply lag exceeds 30 seconds. Review wal_receiver_status_interval and standby workload.",
+      "metadata_json": {
+        "metric_name": "max_replay_lag_seconds",
+        "operator": ">=",
+        "threshold": 30
+      }
+    },
+    "pg17_replication_lag_seconds_critical": {
+      "title": "Replication Apply Lag Critical (5+ minutes)",
+      "domain": "Replication",
+      "severity": "critical",
+      "condition": "max_replay_lag_seconds >= 300",
+      "threshold": "300",
+      "recommendation": "Standby apply lag exceeds 5 minutes. DR capability is severely degraded. Investigate standby apply throughput immediately.",
+      "metadata_json": {
+        "metric_name": "max_replay_lag_seconds",
+        "operator": ">=",
+        "threshold": 300
+      }
+    },
+    "pg17_inactive_replication_slot": {
+      "title": "Inactive Replication Slot",
+      "domain": "Replication",
+      "severity": "critical",
+      "condition": "inactive_slots > 0",
+      "threshold": "0",
+      "recommendation": "Inactive replication slots prevent WAL cleanup and can cause disk full conditions. Drop unused slots immediately.",
+      "metadata_json": {
+        "metric_name": "inactive_slots",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "pg17_retained_wal_warning": {
+      "title": "Replication Slot Retaining Large WAL (5 GB+)",
+      "domain": "Replication",
+      "severity": "warning",
+      "condition": "max_retained_wal_bytes >= 5368709120",
+      "threshold": "5368709120",
+      "recommendation": "A replication slot is holding back WAL cleanup. Monitor pg_replication_slots.restart_lsn and consider dropping inactive slots.",
+      "metadata_json": {
+        "metric_name": "max_retained_wal_bytes",
+        "operator": ">=",
+        "threshold": 5368709120
+      }
+    },
+    "pg17_retained_wal_critical": {
+      "title": "Replication Slot Retaining Excessive WAL (10 GB+)",
+      "domain": "Replication",
+      "severity": "critical",
+      "condition": "max_retained_wal_bytes >= 10737418240",
+      "threshold": "10737418240",
+      "recommendation": "A replication slot is retaining 10 GB+ of WAL. Disk exhaustion risk is high. Drop inactive slots or reduce wal_keep_size.",
+      "metadata_json": {
+        "metric_name": "max_retained_wal_bytes",
+        "operator": ">=",
+        "threshold": 10737418240
+      }
+    },
+    "pg17_checkpoint_ratio_warning": {
+      "title": "Requested Checkpoint Ratio High (20%+)",
+      "domain": "Checkpoints",
+      "severity": "warning",
+      "condition": "requested_checkpoint_pct >= 20",
+      "threshold": "20",
+      "recommendation": "More than 20% of checkpoints are demand-triggered. Increase max_wal_size or checkpoint_completion_target.",
+      "metadata_json": {
+        "metric_name": "requested_checkpoint_pct",
+        "operator": ">=",
+        "threshold": 20
+      }
+    },
+    "pg17_checkpoint_ratio_critical": {
+      "title": "Requested Checkpoint Ratio Critical (50%+)",
+      "domain": "Checkpoints",
+      "severity": "critical",
+      "condition": "requested_checkpoint_pct >= 50",
+      "threshold": "50",
+      "recommendation": "Over half of all checkpoints are demand-triggered. Significantly increase max_wal_size to reduce write pressure.",
+      "metadata_json": {
+        "metric_name": "requested_checkpoint_pct",
+        "operator": ">=",
+        "threshold": 50
+      }
+    },
+    "pg17_dead_tuple_pct_warning": {
+      "title": "High Dead Tuple Percentage (20%+)",
+      "domain": "Vacuum",
+      "severity": "warning",
+      "condition": "max_dead_tuple_pct >= 20",
+      "threshold": "20",
+      "recommendation": "At least one table has over 20% dead tuples. Check autovacuum settings and long-running transactions.",
+      "metadata_json": {
+        "metric_name": "max_dead_tuple_pct",
+        "operator": ">=",
+        "threshold": 20
+      }
+    },
+    "pg17_dead_tuple_pct_critical": {
+      "title": "Critical Dead Tuple Percentage (40%+)",
+      "domain": "Vacuum",
+      "severity": "critical",
+      "condition": "max_dead_tuple_pct >= 40",
+      "threshold": "40",
+      "recommendation": "A table has over 40% dead tuples causing significant bloat and degraded performance. Run VACUUM ANALYZE immediately.",
+      "metadata_json": {
+        "metric_name": "max_dead_tuple_pct",
+        "operator": ">=",
+        "threshold": 40
+      }
+    },
+    "pg17_old_prepared_transaction_warning": {
+      "title": "Old Prepared Transaction (15+ min)",
+      "domain": "Activity",
+      "severity": "warning",
+      "condition": "max_prepared_age_seconds >= 900",
+      "threshold": "900",
+      "recommendation": "A two-phase commit transaction has been prepared for over 15 minutes. This prevents vacuum from cleaning dead tuples.",
+      "metadata_json": {
+        "metric_name": "max_prepared_age_seconds",
+        "operator": ">=",
+        "threshold": 900
+      }
+    },
+    "pg17_old_prepared_transaction_critical": {
+      "title": "Old Prepared Transaction (1+ hour)",
+      "domain": "Activity",
+      "severity": "critical",
+      "condition": "max_prepared_age_seconds >= 3600",
+      "threshold": "3600",
+      "recommendation": "A prepared transaction is over 1 hour old. This can block XID wraparound protection. Roll back or commit via ROLLBACK/COMMIT PREPARED.",
+      "metadata_json": {
+        "metric_name": "max_prepared_age_seconds",
+        "operator": ">=",
+        "threshold": 3600
+      }
+    },
+    "pg17_invalid_index_found": {
+      "title": "Invalid Index Detected",
+      "domain": "Indexes",
+      "severity": "critical",
+      "condition": "invalid_index_count > 0",
+      "threshold": "0",
+      "recommendation": "One or more indexes are invalid (CREATE INDEX CONCURRENTLY failure or pg_upgrade). Rebuild them with REINDEX CONCURRENTLY.",
+      "metadata_json": {
+        "metric_name": "invalid_index_count",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "pg17_superuser_count_high": {
+      "title": "Superuser Account Count High",
+      "domain": "Security",
+      "severity": "warning",
+      "condition": "superuser_count >= 3",
+      "threshold": "3",
+      "recommendation": "Minimise superuser accounts. Grant only the specific privileges needed. Review role membership in pg_roles.",
+      "metadata_json": {
+        "metric_name": "superuser_count",
+        "operator": ">=",
+        "threshold": 3
+      }
+    },
+    "pg17_settings_pending_restart": {
+      "title": "Configuration Changes Pending Restart",
+      "domain": "Configuration",
+      "severity": "warning",
+      "condition": "settings_pending_restart > 0",
+      "threshold": "0",
+      "recommendation": "One or more postgresql.conf changes require a server restart to take effect. Plan a maintenance window.",
+      "metadata_json": {
+        "metric_name": "settings_pending_restart",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
     "cache_hit_ratio_low": {
-      "title": "Cache Hit Ratio Low",
+      "title": "[Legacy] Cache Hit Ratio Low",
       "domain": "Performance",
       "severity": "warning",
       "condition": "cache_hit_percent < 98",
@@ -160,7 +860,7 @@
       }
     },
     "dead_tuples_high": {
-      "title": "Dead Tuples High",
+      "title": "[Legacy] Dead Tuples High",
       "domain": "Storage & Vacuum",
       "severity": "warning",
       "condition": "dead_tuple_percent > 20",
@@ -173,7 +873,7 @@
       }
     },
     "replication_lag_high": {
-      "title": "Replication Lag High",
+      "title": "[Legacy] Replication Lag High",
       "domain": "Availability",
       "severity": "critical",
       "condition": "max_replication_lag_seconds > 60",
