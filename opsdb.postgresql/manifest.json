@@ -1,9 +1,9 @@
 {
   "key": "opsdb.postgresql",
   "name": "PostgreSQL Observability",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "author": "OpsDB Platform",
-  "description": "Monitor PostgreSQL 17 databases: availability, sessions, blocking, replication, WAL, vacuum, indexes, security, and query performance.",
+  "description": "Monitor PostgreSQL 17 databases: availability, sessions, blocking, replication, WAL, vacuum, indexes, security, query performance, EXPLAIN plan analysis, and alert event tracking.",
   "license_feature": "opsdb.postgresql",
   "icon": "icon.svg",
   "target_types": [
@@ -71,25 +71,19 @@
         "monitoring_pages": [
           "Control Center",
           "Enterprise Monitor",
-          "CPU Usage",
-          "Memory Usage",
           "Waits & Sessions",
           "Locks & Blocking",
+          "Memory Usage",
           "Query Performance",
-          "EXPLAIN Analyzer",
           "Storage & Vacuum",
           "Index and Table",
           "Backup & DR",
           "Security Monitor",
           "Best Practices",
-          "Alerts & Events",
-          "Findings Analysis",
-          "Runtime Collectors",
-          "Collector Frequencies",
-          "SQL Diagnose",
-          "Log Diagnose",
-          "Report",
-          "Dashboard Info"
+          "DB Diagnose",
+          "Explain Plan",
+          "Alert Events",
+          "Target Readiness"
         ],
         "collectors": [
           "pg17_availability",
