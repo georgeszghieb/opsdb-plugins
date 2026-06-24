@@ -1,7 +1,7 @@
 {
   "key": "opsdb.postgresql",
   "name": "PostgreSQL Observability",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "author": "OpsDB Platform",
   "description": "Monitor PostgreSQL 17 databases: availability, sessions, blocking, replication, WAL, vacuum, indexes, security, query performance, EXPLAIN plan analysis, alert event tracking, and metric drill-down panels.",
   "license_feature": "opsdb.postgresql",
@@ -80,6 +80,7 @@
           "Backup & DR",
           "Security Monitor",
           "Best Practices",
+          "Custom Collectors",
           "DB Diagnose",
           "SQL Workbench",
           "Alert Events",
