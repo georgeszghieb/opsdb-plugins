@@ -1,9 +1,9 @@
 {
   "key": "opsdb.postgresql",
   "name": "PostgreSQL Observability",
-  "version": "1.4.0",
+  "version": "1.6.0",
   "author": "OpsDB Platform",
-  "description": "Monitor PostgreSQL 17 databases: availability, sessions, blocking, replication, WAL, vacuum, indexes, security, query performance, EXPLAIN plan analysis, and alert event tracking.",
+  "description": "Monitor PostgreSQL 17 databases: availability, sessions, blocking, replication, WAL, vacuum, indexes, security, query performance, EXPLAIN plan analysis, alert event tracking, and metric drill-down panels.",
   "license_feature": "opsdb.postgresql",
   "icon": "icon.svg",
   "target_types": [
@@ -81,7 +81,7 @@
           "Security Monitor",
           "Best Practices",
           "DB Diagnose",
-          "Explain Plan",
+          "SQL Workbench",
           "Alert Events",
           "Target Readiness"
         ],
@@ -115,7 +115,9 @@
           "pg17_autovacuum_activity",
           "pg17_prepared_transactions",
           "pg17_invalid_indexes",
-          "pg17_partition_overview"
+          "pg17_partition_overview",
+          "pg17_xid_wraparound",
+          "pg17_table_activity"
         ],
         "findings": [
           "pg17_connection_usage_warning",
@@ -147,7 +149,13 @@
           "pg17_old_prepared_transaction_critical",
           "pg17_invalid_index_found",
           "pg17_superuser_count_high",
-          "pg17_settings_pending_restart"
+          "pg17_settings_pending_restart",
+          "pg17_xid_wraparound_warning",
+          "pg17_xid_wraparound_critical",
+          "pg17_ssl_disabled",
+          "pg17_no_idle_txn_timeout",
+          "pg17_synchronous_commit_off",
+          "pg17_high_seq_scan_ratio"
         ],
         "workflow_nodes": [
           "run_postgres_collector",
@@ -346,7 +354,7 @@
       "domain": "Query Performance",
       "description": "Tracked query count, maximum mean execution time in ms, and total temp block spill in MB (requires pg_stat_statements extension).",
       "default_frequency": "5 minutes",
-      "query": "SELECT count(*) AS tracked_query_count, COALESCE(max(mean_exec_time), 0) AS max_mean_exec_time_ms, COALESCE(sum((temp_blks_read + temp_blks_written) * 8.0 / 1024), 0) AS total_temp_spill_mb FROM pg_stat_statements",
+      "query": "SELECT substring(query, 1, 500) AS query, calls::int AS calls, round(mean_exec_time::numeric, 2) AS mean_exec_time_ms, round(total_exec_time::numeric, 2) AS total_exec_time_ms, rows::int AS total_rows FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 25",
       "units": {
         "max_mean_exec_time_ms": "ms",
         "total_temp_spill_mb": "MB"
@@ -363,9 +371,20 @@
     },
     "pg17_configuration_baseline": {
       "domain": "Configuration",
-      "description": "Count of key GUC settings that require a server restart to take effect.",
+      "description": "27 key GUC parameters: memory sizing, WAL durability, autovacuum, timeouts, security, and observability settings. Includes pending-restart count.",
       "default_frequency": "1 hour",
-      "query": "SELECT count(*) FILTER (WHERE pending_restart) AS settings_pending_restart FROM pg_settings WHERE name IN ('max_connections','shared_buffers','work_mem','maintenance_work_mem','autovacuum','wal_level','max_wal_size','checkpoint_timeout','synchronous_commit','shared_preload_libraries','track_io_timing')"
+      "query": "SELECT count(*) FILTER (WHERE pending_restart) AS settings_pending_restart, max(CASE WHEN name='track_counts' THEN (setting='on')::int END) AS track_counts, max(CASE WHEN name='track_io_timing' THEN (setting='on')::int END) AS track_io_timing, max(CASE WHEN name='autovacuum' THEN (setting='on')::int END) AS autovacuum, max(CASE WHEN name='log_checkpoints' THEN (setting='on')::int END) AS log_checkpoints, max(CASE WHEN name='log_lock_waits' THEN (setting='on')::int END) AS log_lock_waits, max(CASE WHEN name='log_connections' THEN (setting='on')::int END) AS log_connections, max(CASE WHEN name='ssl' THEN (setting='on')::int END) AS ssl_enabled, max(CASE WHEN name='synchronous_commit' THEN (setting IN ('on','remote_apply','remote_write'))::int END) AS synchronous_commit_safe, max(CASE WHEN name='max_connections' THEN setting::numeric END) AS max_connections, max(CASE WHEN name='max_wal_senders' THEN setting::numeric END) AS max_wal_senders, max(CASE WHEN name='autovacuum_max_workers' THEN setting::numeric END) AS autovacuum_max_workers, max(CASE WHEN name='max_parallel_workers_per_gather' THEN setting::numeric END) AS max_parallel_workers, max(CASE WHEN name='checkpoint_completion_target' THEN setting::numeric END) AS checkpoint_completion_target, max(CASE WHEN name='random_page_cost' THEN setting::numeric END) AS random_page_cost, max(CASE WHEN name='autovacuum_vacuum_scale_factor' THEN setting::numeric END) AS autovacuum_vacuum_scale_factor, max(CASE WHEN name='log_min_duration_statement' THEN setting::numeric END) AS log_min_duration_statement, max(CASE WHEN name='idle_in_transaction_session_timeout' THEN setting::numeric END) AS idle_in_transaction_session_timeout_ms, max(CASE WHEN name='statement_timeout' THEN setting::numeric END) AS statement_timeout_ms, max(CASE WHEN name='lock_timeout' THEN setting::numeric END) AS lock_timeout_ms, max(CASE WHEN name='shared_buffers' THEN setting::numeric * 8192 END) AS shared_buffers_bytes, max(CASE WHEN name='work_mem' THEN setting::numeric * 1024 END) AS work_mem_bytes, max(CASE WHEN name='maintenance_work_mem' THEN setting::numeric * 1024 END) AS maintenance_work_mem_bytes, max(CASE WHEN name='max_wal_size' THEN setting::numeric * 1048576 END) AS max_wal_size_bytes, max(CASE WHEN name='effective_cache_size' THEN setting::numeric * 8192 END) AS effective_cache_size_bytes, max(CASE WHEN name='shared_preload_libraries' THEN (setting LIKE '%pg_stat_statements%')::int END) AS shared_preload_has_pss, max(CASE WHEN name='wal_level' THEN (setting IN ('replica','logical'))::int END) AS wal_level_ok FROM pg_settings WHERE name IN ('track_counts','track_io_timing','autovacuum','log_checkpoints','log_lock_waits','log_connections','ssl','synchronous_commit','max_connections','max_wal_senders','autovacuum_max_workers','max_parallel_workers_per_gather','checkpoint_completion_target','random_page_cost','autovacuum_vacuum_scale_factor','log_min_duration_statement','idle_in_transaction_session_timeout','statement_timeout','lock_timeout','shared_buffers','work_mem','maintenance_work_mem','max_wal_size','effective_cache_size','shared_preload_libraries','wal_level')",
+      "units": {
+        "shared_buffers_bytes": "bytes",
+        "work_mem_bytes": "bytes",
+        "maintenance_work_mem_bytes": "bytes",
+        "max_wal_size_bytes": "bytes",
+        "effective_cache_size_bytes": "bytes",
+        "idle_in_transaction_session_timeout_ms": "ms",
+        "statement_timeout_ms": "ms",
+        "lock_timeout_ms": "ms",
+        "log_min_duration_statement": "ms"
+      }
     },
     "pg17_extension_inventory": {
       "domain": "Configuration",
@@ -418,6 +437,22 @@
       "default_frequency": "1 hour",
       "query": "SELECT count(*) AS partitioned_table_count, COALESCE(max(child_count), 0) AS max_partition_count FROM (SELECT c.oid, count(child.inhrelid) AS child_count FROM pg_class c LEFT JOIN pg_inherits child ON child.inhparent = c.oid WHERE c.relkind = 'p' GROUP BY c.oid) t",
       "result_mapping": "columns"
+    },
+    "pg17_xid_wraparound": {
+      "domain": "Availability",
+      "description": "XID age per database — exceeding 2.1 billion causes PostgreSQL to forcibly shut down to prevent wraparound data corruption. This is the #1 cause of unplanned PG outages.",
+      "default_frequency": "1 hour",
+      "query": "SELECT max(age(datfrozenxid)) AS max_xid_age, count(*) FILTER (WHERE age(datfrozenxid) > 1500000000) AS databases_near_wraparound, count(*) FILTER (WHERE age(datfrozenxid) > 200000000) AS databases_needing_freeze, COALESCE(min(2147483647 - age(datfrozenxid)), 0) AS min_xids_until_wraparound FROM pg_database WHERE datallowconn"
+    },
+    "pg17_table_activity": {
+      "domain": "Performance",
+      "description": "Table-level DML throughput and scan patterns: total inserts/updates/deletes, sequential vs index scan ratio, HOT update percentage, and large tables being sequentially scanned.",
+      "default_frequency": "15 minutes",
+      "query": "SELECT COALESCE(sum(seq_scan), 0) AS total_seq_scans, COALESCE(sum(idx_scan), 0) AS total_idx_scans, COALESCE(round(sum(seq_scan)::numeric / NULLIF(sum(seq_scan) + sum(idx_scan), 0) * 100, 2), 0) AS seq_scan_pct, COALESCE(sum(n_tup_ins), 0) AS total_inserts, COALESCE(sum(n_tup_upd), 0) AS total_updates, COALESCE(sum(n_tup_del), 0) AS total_deletes, COALESCE(sum(n_tup_hot_upd), 0) AS total_hot_updates, COALESCE(round(sum(n_tup_hot_upd)::numeric / NULLIF(sum(n_tup_upd), 0) * 100, 2), 0) AS hot_update_pct, count(*) FILTER (WHERE seq_scan > 100 AND n_live_tup > 10000) AS large_tables_seqscanned FROM pg_stat_user_tables",
+      "units": {
+        "seq_scan_pct": "percent",
+        "hot_update_pct": "percent"
+      }
     },
     "postgres.activity_locks": {
       "domain": "Activity",
@@ -840,6 +875,60 @@
         "threshold": 0
       }
     },
+    "pg17_xid_wraparound_warning": {
+      "title": "XID Wraparound Risk — Age Exceeds 1.5 Billion",
+      "domain": "Availability",
+      "severity": "warning",
+      "condition": "max_xid_age >= 1500000000",
+      "threshold": "1500000000",
+      "recommendation": "One or more databases are approaching XID wraparound (limit: ~2.1B). Run VACUUM FREEZE on affected databases immediately and check autovacuum_freeze_max_age. Plan a maintenance VACUUM FREEZE if age > 1.9B.",
+      "metadata_json": { "metric_name": "max_xid_age", "operator": ">=", "threshold": 1500000000 }
+    },
+    "pg17_xid_wraparound_critical": {
+      "title": "XID Wraparound Imminent — Age Exceeds 2 Billion",
+      "domain": "Availability",
+      "severity": "critical",
+      "condition": "max_xid_age >= 2000000000",
+      "threshold": "2000000000",
+      "recommendation": "EMERGENCY: PostgreSQL will force-shutdown at ~2.1B XIDs to prevent data corruption. Run VACUUM FREEZE immediately. If the database is too large, consider pg_upgrade or coordinated freeze. Do not restart without running VACUUM FREEZE first.",
+      "metadata_json": { "metric_name": "max_xid_age", "operator": ">=", "threshold": 2000000000 }
+    },
+    "pg17_ssl_disabled": {
+      "title": "SSL/TLS Not Enabled",
+      "domain": "Security",
+      "severity": "critical",
+      "condition": "ssl_enabled = 0",
+      "threshold": "0",
+      "recommendation": "Enable SSL by setting ssl = on in postgresql.conf and providing ssl_cert_file / ssl_key_file. All connections should be encrypted in transit. Enforce via pg_hba.conf using hostssl entries.",
+      "metadata_json": { "metric_name": "ssl_enabled", "operator": "=", "threshold": 0 }
+    },
+    "pg17_no_idle_txn_timeout": {
+      "title": "idle_in_transaction_session_timeout Not Set",
+      "domain": "Configuration",
+      "severity": "warning",
+      "condition": "idle_in_transaction_session_timeout_ms = 0",
+      "threshold": "0",
+      "recommendation": "Set idle_in_transaction_session_timeout = '60s' to automatically terminate sessions that hold open transactions without activity. Without this, a single stuck client can block autovacuum and cause lock pileups indefinitely.",
+      "metadata_json": { "metric_name": "idle_in_transaction_session_timeout_ms", "operator": "=", "threshold": 0 }
+    },
+    "pg17_synchronous_commit_off": {
+      "title": "synchronous_commit Disabled — Data Loss Risk",
+      "domain": "Configuration",
+      "severity": "warning",
+      "condition": "synchronous_commit_safe = 0",
+      "threshold": "0",
+      "recommendation": "synchronous_commit = off trades durability for throughput. A server crash within ~200ms can lose committed transactions. Set to 'on' for OLTP workloads. If you need the performance, use it only for specific non-critical tables via SET LOCAL.",
+      "metadata_json": { "metric_name": "synchronous_commit_safe", "operator": "=", "threshold": 0 }
+    },
+    "pg17_high_seq_scan_ratio": {
+      "title": "High Sequential Scan Ratio (50%+)",
+      "domain": "Performance",
+      "severity": "warning",
+      "condition": "seq_scan_pct >= 50",
+      "threshold": "50",
+      "recommendation": "More than half of all table scans are sequential. Review pg_stat_user_tables for large tables with high seq_scan counts. Add indexes for frequent query predicates. Check random_page_cost vs effective_cache_size if plans look wrong.",
+      "metadata_json": { "metric_name": "seq_scan_pct", "operator": ">=", "threshold": 50 }
+    },
     "cache_hit_ratio_low": {
       "title": "[Legacy] Cache Hit Ratio Low",
       "domain": "Performance",
@@ -879,5 +968,43 @@
         "threshold": 60
       }
     }
-  }
+  },
+  "charts": [
+    {
+      "key": "active_sessions",
+      "title": "Active Sessions",
+      "chart_type": "line",
+      "metric_name": "active_sessions",
+      "domain": "Activity",
+      "thresholds": [],
+      "config_json": {}
+    },
+    {
+      "key": "blocking_count",
+      "title": "Blocking Count",
+      "chart_type": "line",
+      "metric_name": "blocking_count",
+      "domain": "Locks",
+      "thresholds": [],
+      "config_json": {}
+    },
+    {
+      "key": "cache_hit_pct",
+      "title": "Cache Hit %",
+      "chart_type": "line",
+      "metric_name": "cache_hit_pct",
+      "domain": "Performance",
+      "thresholds": [],
+      "config_json": {}
+    },
+    {
+      "key": "current_database_size_bytes",
+      "title": "Database Size",
+      "chart_type": "line",
+      "metric_name": "current_database_size_bytes",
+      "domain": "Storage",
+      "thresholds": [],
+      "config_json": {}
+    }
+  ]
 }
