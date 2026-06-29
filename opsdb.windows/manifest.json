@@ -1,11 +1,78 @@
 {
   "key": "opsdb.windows",
-  "name": "Windows Infrastructure Monitoring",
-  "version": "1.0.0",
+  "name": "Windows Server Monitoring",
+  "version": "2.0.5",
   "author": "OpsDB Platform",
-  "description": "Monitor Windows servers via WinRM including CPU, memory, disk performance counters, event log error rates, and service health.",
+  "description": "Monitor Windows Server VMs and physical hosts via WinRM: CPU, memory, disk, network, services, processes, event log, and security events. Provides real-time performance counters, critical service health, event log error tracking, and security audit monitoring.",
   "license_feature": "opsdb.windows",
   "icon": "icon.svg",
+  "setup_requirements": [
+    {
+      "id": "winrm_enabled",
+      "title": "WinRM Service Enabled",
+      "description": "Windows Remote Management must be running and listening on the configured port (default 5985).",
+      "category": "connectivity",
+      "level": "required",
+      "fix_commands": [
+        "Enable-PSRemoting -Force",
+        "Set-Service WinRM -StartupType Automatic",
+        "Start-Service WinRM"
+      ]
+    },
+    {
+      "id": "winrm_auth_ntlm",
+      "title": "NTLM Authentication Enabled",
+      "description": "NTLM transport requires WSMan NTLM auth to be active. Required when auth_transport=ntlm.",
+      "category": "authentication",
+      "level": "conditional",
+      "condition": "auth_transport == ntlm",
+      "fix_commands": [
+        "Set-Item WSMan:\\localhost\\Service\\Auth\\Ntlm -Value $true"
+      ]
+    },
+    {
+      "id": "winrm_auth_basic",
+      "title": "Basic Authentication Enabled (for local accounts)",
+      "description": "Basic transport requires WSMan Basic auth and AllowUnencrypted when using HTTP. Must be run as Administrator in PowerShell, followed by a WinRM service restart.",
+      "category": "authentication",
+      "level": "conditional",
+      "condition": "auth_transport == basic",
+      "fix_commands": [
+        "Set-Item WSMan:\\localhost\\Service\\Auth\\Basic -Value $true",
+        "Set-Item WSMan:\\localhost\\Service\\AllowUnencrypted -Value $true",
+        "Restart-Service WinRM",
+        "winrm get winrm/config/Service/Auth"
+      ]
+    },
+    {
+      "id": "firewall_port_5985",
+      "title": "Firewall Port 5985 Open (HTTP)",
+      "description": "Windows Firewall must allow inbound TCP 5985 for WinRM HTTP. Use 5986 for HTTPS.",
+      "category": "network",
+      "level": "required",
+      "fix_commands": [
+        "netsh advfirewall firewall add rule name=\"WinRM HTTP\" protocol=TCP dir=in localport=5985 action=allow"
+      ]
+    },
+    {
+      "id": "powershell_version",
+      "title": "PowerShell 4.0 or Later",
+      "description": "All collectors require PowerShell 4.0+ for CIM cmdlets, Get-Counter, Get-WinEvent, and ConvertTo-Json with depth support.",
+      "category": "runtime",
+      "level": "required",
+      "fix_commands": []
+    },
+    {
+      "id": "local_account_policy",
+      "title": "LocalAccountTokenFilterPolicy (for non-domain setups)",
+      "description": "When connecting with a local Administrator account, UAC token filtering may block remote WinRM access. Setting this policy allows local admins to authenticate remotely.",
+      "category": "authentication",
+      "level": "recommended",
+      "fix_commands": [
+        "New-ItemProperty -Name LocalAccountTokenFilterPolicy -Path HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System -PropertyType DWord -Value 1 -Force"
+      ]
+    }
+  ],
   "target_types": [
     {
       "id": "windows_server",
@@ -18,7 +85,8 @@
             "key": "host",
             "label": "Host / IP",
             "type": "text",
-            "required": true
+            "required": true,
+            "placeholder": "192.168.1.10"
           },
           {
             "key": "winrm_port",
@@ -41,49 +109,93 @@
             "required": true
           },
           {
-            "key": "use_ssl",
-            "label": "Use SSL (HTTPS)",
-            "type": "select",
-            "required": false,
-            "default": "no",
-            "options": [
-              "yes",
-              "no"
-            ]
-          },
-          {
             "key": "domain",
             "label": "Domain (optional)",
             "type": "text",
-            "required": false
+            "required": false,
+            "placeholder": "CORP"
+          },
+          {
+            "key": "auth_transport",
+            "label": "Auth Transport",
+            "type": "select",
+            "required": false,
+            "default": "ntlm",
+            "options": ["ntlm", "basic", "kerberos"]
+          },
+          {
+            "key": "use_ssl",
+            "label": "Use HTTPS (SSL)",
+            "type": "select",
+            "required": false,
+            "default": "no",
+            "options": ["no", "yes"]
           }
         ],
         "monitoring_pages": [
           "Control Center",
-          "CPU",
+          "CPU & Performance",
           "Memory",
-          "Disk",
-          "Services",
-          "Event Log",
+          "Storage",
+          "Disk I/O",
           "Network",
+          "Services",
+          "Processes",
+          "Event Log",
           "Security Monitor",
+          "System Info",
           "Best Practices",
-          "Alerts & Events",
-          "Findings Analysis",
-          "Runtime Collectors",
-          "Collector Frequencies",
-          "Log Diagnose",
-          "Report",
-          "Dashboard Info"
+          "Custom Collectors",
+          "Host Diagnose",
+          "Alert Events",
+          "Target Readiness"
         ],
         "collectors": [
-          "windows.perf_counters",
-          "windows.event_log"
+          "win.system_uptime",
+          "win.cpu_utilization",
+          "win.memory_utilization",
+          "win.disk_utilization",
+          "win.disk_details",
+          "win.disk_io",
+          "win.network_io",
+          "win.network_adapters",
+          "win.tcp_connections",
+          "win.services_health",
+          "win.services_details",
+          "win.event_log_errors",
+          "win.event_log_details",
+          "win.process_top_cpu",
+          "win.process_top_memory",
+          "win.performance_overview",
+          "win.security_events",
+          "win.local_users",
+          "win.system_info"
         ],
         "findings": [
-          "windows_cpu_usage_high",
-          "windows_disk_usage_high",
-          "windows_event_errors_high"
+          "win_cpu_usage_warning",
+          "win_cpu_usage_critical",
+          "win_memory_usage_warning",
+          "win_memory_usage_critical",
+          "win_processor_queue_high",
+          "win_page_faults_high",
+          "win_committed_memory_high",
+          "win_disk_space_warning",
+          "win_disk_space_critical",
+          "win_disk_read_latency_high",
+          "win_disk_write_latency_high",
+          "win_network_errors_warning",
+          "win_network_errors_critical",
+          "win_critical_service_stopped",
+          "win_services_stopped_many",
+          "win_event_errors_warning",
+          "win_event_errors_critical",
+          "win_critical_events_detected",
+          "win_failed_logons_warning",
+          "win_failed_logons_critical",
+          "win_account_lockouts_detected",
+          "win_admin_accounts_high",
+          "win_pending_reboot",
+          "win_patches_outdated"
         ],
         "workflow_nodes": [
           "run_windows_collector",
@@ -99,68 +211,620 @@
     }
   ],
   "collector_meta": {
-    "windows.perf_counters": {
-      "domain": "Compute",
-      "description": "CPU usage, memory utilisation, and maximum disk usage via WinRM PowerShell.",
-      "default_frequency": "5 minutes",
-      "command": "$cpu=(Get-Counter '\\Processor(_Total)\\% Processor Time' -ErrorAction SilentlyContinue).CounterSamples[0].CookedValue;$os=Get-CimInstance Win32_OperatingSystem;$disks=Get-PSDrive -PSProvider FileSystem|Where-Object{$_.Used -ne $null};$maxDisk=($disks|ForEach-Object{if($_.Used+$_.Free -gt 0){[math]::Round($_.Used/($_.Used+$_.Free)*100,1)}}|Measure-Object -Maximum).Maximum;@{cpu_usage_percent=[math]::Round($cpu,1);memory_used_percent=[math]::Round(($os.TotalVisibleMemorySize-$os.FreePhysicalMemory)/$os.TotalVisibleMemorySize*100,1);memory_total_bytes=$os.TotalVisibleMemorySize*1024;disk_used_percent=$maxDisk}|ConvertTo-Json -Compress",
+    "win.system_uptime": {
+      "domain": "Availability",
+      "description": "Server uptime in seconds, last boot time, OS caption, build number, and hostname. Run every minute to detect unexpected reboots.",
+      "default_frequency": "1 minute",
+      "command": "$os=Get-CimInstance Win32_OperatingSystem;$up=(Get-Date)-$os.LastBootUpTime;@{uptime_seconds=[math]::Round($up.TotalSeconds);build_number=[int]$os.BuildNumber;last_boot=$os.LastBootUpTime.ToString('yyyy-MM-dd HH:mm');os_name=$os.Caption;hostname=$env:COMPUTERNAME}|ConvertTo-Json -Compress",
       "result_format": "json",
       "result_mapping": "keys",
       "units": {
-        "cpu_usage_percent": "percent",
-        "memory_used_percent": "percent",
-        "memory_total_bytes": "bytes",
-        "disk_used_percent": "percent"
+        "uptime_seconds": "seconds"
       }
     },
-    "windows.event_log": {
-      "domain": "Availability",
-      "description": "Error and critical event count from System and Application logs in the past hour.",
+    "win.cpu_utilization": {
+      "domain": "Compute",
+      "description": "Total CPU usage percentage (real-time performance counter), processor queue length, and physical/logical core counts.",
+      "default_frequency": "1 minute",
+      "command": "$cpu=[math]::Round((Get-Counter '\\Processor(_Total)\\% Processor Time').CounterSamples[0].CookedValue,1);$queue=[int](Get-Counter '\\System\\Processor Queue Length' -EA SilentlyContinue).CounterSamples[0].CookedValue;$p=Get-CimInstance Win32_Processor;$cores=($p|Measure-Object NumberOfCores -Sum).Sum;$lp=($p|Measure-Object NumberOfLogicalProcessors -Sum).Sum;@{cpu_usage_percent=$cpu;processor_queue_length=$queue;physical_cores=[int]$cores;logical_processors=[int]$lp}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "cpu_usage_percent": "percent"
+      }
+    },
+    "win.memory_utilization": {
+      "domain": "Compute",
+      "description": "Memory usage percentage, free/used/total bytes, page faults per second, and committed memory percentage.",
+      "default_frequency": "1 minute",
+      "command": "$os=Get-CimInstance Win32_OperatingSystem;$total=$os.TotalVisibleMemorySize;$free=$os.FreePhysicalMemory;$used=$total-$free;$pf=(Get-Counter '\\Memory\\Page Faults/sec' -EA SilentlyContinue).CounterSamples[0].CookedValue;$cm=(Get-Counter '\\Memory\\% Committed Bytes In Use' -EA SilentlyContinue).CounterSamples[0].CookedValue;@{memory_used_percent=[math]::Round($used/$total*100,1);memory_free_bytes=[long]($free*1024);memory_total_bytes=[long]($total*1024);memory_used_bytes=[long]($used*1024);page_faults_per_sec=[math]::Round($pf);committed_pct=[math]::Round($cm,1)}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "memory_used_percent": "percent",
+        "memory_free_bytes": "bytes",
+        "memory_total_bytes": "bytes",
+        "memory_used_bytes": "bytes",
+        "committed_pct": "percent"
+      }
+    },
+    "win.disk_utilization": {
+      "domain": "Storage",
+      "description": "Aggregate disk usage across all volumes: drive count, maximum used percentage, total/free/used bytes. Use win.disk_details for per-drive breakdown.",
+      "default_frequency": "5 minutes",
+      "command": "$vols=Get-PSDrive -PSProvider FileSystem|Where-Object{$_.Used -ne $null -and ($_.Used+$_.Free) -gt 0};$total=0;$free=0;$maxPct=0;$vols|%{$t=$_.Used+$_.Free;$total+=$t;$free+=$_.Free;$p=[math]::Round($_.Used/$t*100,1);if($p -gt $maxPct){$maxPct=$p}};@{drive_count=$vols.Count;max_disk_used_pct=$maxPct;total_disk_bytes=$total;free_disk_bytes=$free;used_disk_bytes=$total-$free}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "max_disk_used_pct": "percent",
+        "total_disk_bytes": "bytes",
+        "free_disk_bytes": "bytes",
+        "used_disk_bytes": "bytes"
+      }
+    },
+    "win.disk_details": {
+      "domain": "Storage",
+      "description": "Per-volume disk space breakdown: drive letter, used/free/total bytes, and usage percentage. Returns one row per mounted volume.",
       "default_frequency": "10 minutes",
-      "command": "$errors=(Get-WinEvent -FilterHashtable @{LogName='System','Application';Level=1,2;StartTime=(Get-Date).AddHours(-1)} -ErrorAction SilentlyContinue).Count;@{event_error_count=if($errors){$errors}else{0}}|ConvertTo-Json -Compress",
+      "command": "$rows=@(Get-PSDrive -PSProvider FileSystem|Where-Object{$_.Used -ne $null -and ($_.Used+$_.Free) -gt 0}|ForEach-Object{$t=$_.Used+$_.Free;@{drive=$_.Name;used_bytes=$_.Used;free_bytes=$_.Free;total_bytes=$t;used_pct=[math]::Round($_.Used/$t*100,1)}});if($rows.Count -eq 0){@(@{drive='N/A';used_bytes=0;free_bytes=0;total_bytes=0;used_pct=0})}else{$rows}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "rows"
+    },
+    "win.disk_io": {
+      "domain": "Storage",
+      "description": "Physical disk I/O throughput and latency: read/write bytes per second and average read/write latency in milliseconds (all physical disks combined).",
+      "default_frequency": "1 minute",
+      "command": "$c=Get-Counter '\\PhysicalDisk(_Total)\\Disk Read Bytes/sec','\\PhysicalDisk(_Total)\\Disk Write Bytes/sec','\\PhysicalDisk(_Total)\\Avg. Disk sec/Read','\\PhysicalDisk(_Total)\\Avg. Disk sec/Write' -EA SilentlyContinue;$s=$c.CounterSamples;$rbps=($s|?{$_.Path -match 'Read Bytes'})[0].CookedValue;$wbps=($s|?{$_.Path -match 'Write Bytes'})[0].CookedValue;$rms=($s|?{$_.Path -match 'sec/Read'})[0].CookedValue;$wms=($s|?{$_.Path -match 'sec/Write'})[0].CookedValue;@{disk_read_bytes_per_sec=[math]::Round($rbps);disk_write_bytes_per_sec=[math]::Round($wbps);avg_disk_read_ms=[math]::Round($rms*1000,2);avg_disk_write_ms=[math]::Round($wms*1000,2)}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "disk_read_bytes_per_sec": "bytes",
+        "disk_write_bytes_per_sec": "bytes",
+        "avg_disk_read_ms": "ms",
+        "avg_disk_write_ms": "ms"
+      }
+    },
+    "win.network_io": {
+      "domain": "Network",
+      "description": "Aggregate network throughput and error counts across all active interfaces: bytes received/sent per second, and packet receive/send error counts.",
+      "default_frequency": "1 minute",
+      "command": "$c=Get-Counter '\\Network Interface(*)\\Bytes Received/sec','\\Network Interface(*)\\Bytes Sent/sec','\\Network Interface(*)\\Packets Received Errors','\\Network Interface(*)\\Packets Outbound Errors' -EA SilentlyContinue;$s=$c.CounterSamples;@{total_bytes_received_per_sec=[math]::Round(($s|?{$_.Path -match 'Received/sec'}|Measure-Object CookedValue -Sum).Sum);total_bytes_sent_per_sec=[math]::Round(($s|?{$_.Path -match 'Sent/sec'}|Measure-Object CookedValue -Sum).Sum);total_receive_errors=[long]($s|?{$_.Path -match 'Received Errors'}|Measure-Object CookedValue -Sum).Sum;total_send_errors=[long]($s|?{$_.Path -match 'Outbound Errors'}|Measure-Object CookedValue -Sum).Sum}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "total_bytes_received_per_sec": "bytes",
+        "total_bytes_sent_per_sec": "bytes"
+      }
+    },
+    "win.network_adapters": {
+      "domain": "Network",
+      "description": "Per-adapter network statistics for all UP adapters: name, link speed, cumulative bytes received/sent, and receive packet errors.",
+      "default_frequency": "5 minutes",
+      "command": "$rows=@(Get-NetAdapter -EA SilentlyContinue|?{$_.Status -eq 'Up'}|ForEach-Object{$st=Get-NetAdapterStatistics -Name $_.Name -EA SilentlyContinue;@{name=$_.Name;status=$_.Status.ToString();speed_mbps=[math]::Round($_.LinkSpeed/1e6,1);received_bytes=if($st){[long]$st.ReceivedBytes}else{0};sent_bytes=if($st){[long]$st.SentBytes}else{0};receive_errors=if($st){[long]$st.ReceivedPacketErrors}else{0}}});if($rows.Count -eq 0){@(@{name='None';status='Down';speed_mbps=0;received_bytes=0;sent_bytes=0;receive_errors=0})}else{$rows}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "rows"
+    },
+    "win.tcp_connections": {
+      "domain": "Network",
+      "description": "TCP connection state counts: established, time-wait, close-wait, listening ports, and total connections.",
+      "default_frequency": "5 minutes",
+      "command": "$c=Get-NetTCPConnection -EA SilentlyContinue;$est=($c|?{$_.State -eq 'Established'}).Count;$tw=($c|?{$_.State -eq 'TimeWait'}).Count;$cw=($c|?{$_.State -eq 'CloseWait'}).Count;$li=($c|?{$_.State -eq 'Listen'}).Count;@{established_connections=$est;time_wait_connections=$tw;close_wait_connections=$cw;listening_ports=$li;total_connections=$c.Count}|ConvertTo-Json -Compress",
       "result_format": "json",
       "result_mapping": "keys"
+    },
+    "win.services_health": {
+      "domain": "Availability",
+      "description": "Service health summary: total, running, and stopped service counts, plus count of critical system services that are not running.",
+      "default_frequency": "1 minute",
+      "command": "$svcs=Get-Service -EA SilentlyContinue;$crit=@('Winmgmt','EventLog','LanmanWorkstation','RpcSs','BITS','wuauserv','Dhcp','Dnscache','PlugPlay','Schedule');$critStopped=($svcs|?{$_.Status -ne 'Running' -and $crit -contains $_.ServiceName}).Count;@{total_services=$svcs.Count;running_services=($svcs|?{$_.Status -eq 'Running'}).Count;stopped_services=($svcs|?{$_.Status -eq 'Stopped'}).Count;critical_services_stopped=$critStopped}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "win.services_details": {
+      "domain": "Availability",
+      "description": "All non-disabled services with their current status and start type. Returns one row per service — use to investigate which services are stopped.",
+      "default_frequency": "5 minutes",
+      "command": "$rows=@(Get-Service -EA SilentlyContinue|?{$_.StartType -ne 'Disabled' -or $_.Status -eq 'Running'}|Sort-Object Status,DisplayName|ForEach-Object{@{name=$_.ServiceName;display_name=$_.DisplayName;status=$_.Status.ToString();start_type=$_.StartType.ToString()}});$rows|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "rows"
+    },
+    "win.event_log_errors": {
+      "domain": "Event Log",
+      "description": "Error and Critical event counts from System and Application logs in the past hour, split by log and severity level.",
+      "default_frequency": "10 minutes",
+      "command": "$since=(Get-Date).AddHours(-1);$sys=@(Get-WinEvent -FilterHashtable @{LogName='System';Level=1,2;StartTime=$since} -EA SilentlyContinue);$app=@(Get-WinEvent -FilterHashtable @{LogName='Application';Level=1,2;StartTime=$since} -EA SilentlyContinue);$crit=@(@($sys)+@($app)|?{$_.Level -eq 1}).Count;@{event_error_count=$sys.Count+$app.Count;critical_event_count=$crit;system_errors=$sys.Count;application_errors=$app.Count}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "win.event_log_details": {
+      "domain": "Event Log",
+      "description": "Most recent 50 Error and Critical events from System and Application logs in the past 2 hours. Returns rows with timestamp, source, level, event ID, and message excerpt.",
+      "default_frequency": "10 minutes",
+      "command": "$events=@(Get-WinEvent -FilterHashtable @{LogName='System','Application';Level=1,2;StartTime=(Get-Date).AddHours(-2)} -EA SilentlyContinue -MaxEvents 50|ForEach-Object{@{time=$_.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss');log=$_.LogName;source=$_.ProviderName;level=$_.LevelDisplayName;id=[int]$_.Id;message=$_.Message.Substring(0,[math]::Min(200,$_.Message.Length))}});if($events.Count -eq 0){@(@{time='';log='';source='';level='';id=0;message='No errors in the last 2 hours'})}else{$events}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "rows"
+    },
+    "win.process_top_cpu": {
+      "domain": "Performance",
+      "description": "Top 20 processes by cumulative CPU time: process name, PID, CPU seconds consumed since start, working set memory in MB, thread count, and handle count.",
+      "default_frequency": "5 minutes",
+      "command": "$rows=@(Get-Process -EA SilentlyContinue|Sort-Object CPU -Desc|Select-Object -First 20|ForEach-Object{@{name=$_.ProcessName;pid=[int]$_.Id;cpu_seconds=[math]::Round($_.CPU,1);memory_mb=[math]::Round($_.WorkingSet64/1MB,1);threads=[int]$_.Threads.Count;handles=[int]$_.HandleCount}});$rows|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "rows"
+    },
+    "win.process_top_memory": {
+      "domain": "Performance",
+      "description": "Top 20 processes by working set memory usage: process name, PID, working set MB, private memory MB, handle count, and thread count.",
+      "default_frequency": "5 minutes",
+      "command": "$rows=@(Get-Process -EA SilentlyContinue|Sort-Object WorkingSet64 -Desc|Select-Object -First 20|ForEach-Object{@{name=$_.ProcessName;pid=[int]$_.Id;memory_mb=[math]::Round($_.WorkingSet64/1MB,1);private_mb=[math]::Round($_.PrivateMemorySize64/1MB,1);handles=[int]$_.HandleCount;threads=[int]$_.Threads.Count}});$rows|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "rows"
+    },
+    "win.performance_overview": {
+      "domain": "Performance",
+      "description": "System-wide process, thread, and handle counts from performance counters. Useful for detecting handle or thread leaks.",
+      "default_frequency": "5 minutes",
+      "command": "$h=[int](Get-Counter '\\Process(_Total)\\Handle Count' -EA SilentlyContinue).CounterSamples[0].CookedValue;$t=[int](Get-Counter '\\Process(_Total)\\Thread Count' -EA SilentlyContinue).CounterSamples[0].CookedValue;$p=@(Get-Process -EA SilentlyContinue).Count;@{total_handles=$h;total_threads=$t;total_processes=$p}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "win.security_events": {
+      "domain": "Security",
+      "description": "Security audit event counts from the Security log in the past hour: failed logon attempts (Event 4625), account lockouts (Event 4740), and explicit credential logon attempts (Event 4648).",
+      "default_frequency": "10 minutes",
+      "command": "$since=(Get-Date).AddHours(-1);$fl=@(Get-WinEvent -FilterHashtable @{LogName='Security';Id=4625;StartTime=$since} -EA SilentlyContinue);$lo=@(Get-WinEvent -FilterHashtable @{LogName='Security';Id=4740;StartTime=$since} -EA SilentlyContinue);$pl=@(Get-WinEvent -FilterHashtable @{LogName='Security';Id=4648;StartTime=$since} -EA SilentlyContinue);@{failed_logon_count=$fl.Count;account_lockout_count=$lo.Count;explicit_credential_logons=$pl.Count}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "win.local_users": {
+      "domain": "Security",
+      "description": "Local user account summary: total, enabled, and disabled local accounts, and number of members in the local Administrators group.",
+      "default_frequency": "1 hour",
+      "command": "$users=@(Get-LocalUser -EA SilentlyContinue);$admins=@(Get-LocalGroupMember -Group 'Administrators' -EA SilentlyContinue);@{total_local_users=$users.Count;enabled_users=($users|?{$_.Enabled}).Count;disabled_users=($users|?{-not $_.Enabled}).Count;admin_group_members=$admins.Count}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "win.system_info": {
+      "domain": "Configuration",
+      "description": "OS edition, version, build, architecture, domain membership, total memory, processor count, installed patch count, days since last patch, and pending reboot status.",
+      "default_frequency": "1 hour",
+      "command": "$os=Get-CimInstance Win32_OperatingSystem;$cs=Get-CimInstance Win32_ComputerSystem;$patches=@(Get-HotFix -EA SilentlyContinue|Sort-Object InstalledOn -Desc);$lastDays=if($patches.Count -gt 0){[math]::Round(((Get-Date)-$patches[0].InstalledOn).TotalDays)}else{-1};$rb=[int](Test-Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\RebootPending');@{os_name=$os.Caption;version=$os.Version;build=[int]$os.BuildNumber;architecture=$cs.SystemType;domain=$cs.Domain;total_memory_gb=[math]::Round($cs.TotalPhysicalMemory/1GB,1);logical_processors=[int]$cs.NumberOfLogicalProcessors;installed_patches=$patches.Count;last_patch_days_ago=[int]$lastDays;pending_reboot=$rb}|ConvertTo-Json -Compress",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "total_memory_gb": "GB",
+        "last_patch_days_ago": "days"
+      }
     }
   },
   "findings": {
-    "windows_cpu_usage_high": {
-      "title": "CPU Usage High",
+    "win_cpu_usage_warning": {
+      "title": "CPU Usage High (Warning)",
       "domain": "Compute",
       "severity": "warning",
-      "condition": "cpu_usage_percent > 85",
-      "threshold": "85",
-      "recommendation": "Identify high-CPU services via Task Manager or perfmon and review scheduled tasks.",
+      "condition": "cpu_usage_percent > 75",
+      "threshold": "75",
+      "recommendation": "Review running services and processes. Use win.process_top_cpu to identify high-CPU processes. Check for runaway scheduled tasks or AV scans.",
       "metadata_json": {
         "metric_name": "cpu_usage_percent",
         "operator": ">",
-        "threshold": 85
+        "threshold": 75
       }
     },
-    "windows_disk_usage_high": {
-      "title": "Disk Usage High",
-      "domain": "Storage",
+    "win_cpu_usage_critical": {
+      "title": "CPU Usage Critical (90%+)",
+      "domain": "Compute",
       "severity": "critical",
-      "condition": "disk_used_percent > 90",
+      "condition": "cpu_usage_percent > 90",
       "threshold": "90",
-      "recommendation": "Run Disk Cleanup, review Windows Update files, and archive or delete old logs.",
+      "recommendation": "Server is CPU-saturated. Identify the top-consuming processes immediately. Consider terminating runaway processes or migrating workloads.",
       "metadata_json": {
-        "metric_name": "disk_used_percent",
+        "metric_name": "cpu_usage_percent",
         "operator": ">",
         "threshold": 90
       }
     },
-    "windows_event_errors_high": {
-      "title": "Event Log Errors High",
+    "win_memory_usage_warning": {
+      "title": "Memory Usage High (Warning)",
+      "domain": "Compute",
+      "severity": "warning",
+      "condition": "memory_used_percent > 80",
+      "threshold": "80",
+      "recommendation": "Memory usage exceeds 80%. Review top memory consumers with win.process_top_memory. Check for memory leaks in long-running services.",
+      "metadata_json": {
+        "metric_name": "memory_used_percent",
+        "operator": ">",
+        "threshold": 80
+      }
+    },
+    "win_memory_usage_critical": {
+      "title": "Memory Usage Critical (90%+)",
+      "domain": "Compute",
+      "severity": "critical",
+      "condition": "memory_used_percent > 90",
+      "threshold": "90",
+      "recommendation": "Memory is nearly exhausted. Windows will begin aggressive paging, causing severe performance degradation. Identify and restart or kill the largest memory consumers immediately.",
+      "metadata_json": {
+        "metric_name": "memory_used_percent",
+        "operator": ">",
+        "threshold": 90
+      }
+    },
+    "win_processor_queue_high": {
+      "title": "Processor Queue Length High",
+      "domain": "Compute",
+      "severity": "warning",
+      "condition": "processor_queue_length > 10",
+      "threshold": "10",
+      "recommendation": "More than 10 threads are queued waiting for CPU time. The server is CPU-bound. Reduce workload or add CPU capacity. A sustained queue > 2 per core indicates saturation.",
+      "metadata_json": {
+        "metric_name": "processor_queue_length",
+        "operator": ">",
+        "threshold": 10
+      }
+    },
+    "win_page_faults_high": {
+      "title": "Page Faults Rate High",
+      "domain": "Compute",
+      "severity": "warning",
+      "condition": "page_faults_per_sec > 500",
+      "threshold": "500",
+      "recommendation": "High page fault rate indicates memory pressure. Soft faults (page already in memory) are benign; hard faults (disk reads) severely impact performance. Monitor committed_pct and reduce memory pressure.",
+      "metadata_json": {
+        "metric_name": "page_faults_per_sec",
+        "operator": ">",
+        "threshold": 500
+      }
+    },
+    "win_committed_memory_high": {
+      "title": "Committed Memory Usage Critical",
+      "domain": "Compute",
+      "severity": "critical",
+      "condition": "committed_pct > 90",
+      "threshold": "90",
+      "recommendation": "Virtual memory commitment exceeds 90% of the commit limit (RAM + page file). Risk of out-of-memory conditions. Increase page file size or add RAM. Identify memory-consuming processes immediately.",
+      "metadata_json": {
+        "metric_name": "committed_pct",
+        "operator": ">",
+        "threshold": 90
+      }
+    },
+    "win_disk_space_warning": {
+      "title": "Disk Space Usage High (Warning)",
+      "domain": "Storage",
+      "severity": "warning",
+      "condition": "max_disk_used_pct > 80",
+      "threshold": "80",
+      "recommendation": "At least one volume is over 80% full. Review win.disk_details to identify which drive. Run Disk Cleanup, archive old files, and check Windows Update cache (WinSxS).",
+      "metadata_json": {
+        "metric_name": "max_disk_used_pct",
+        "operator": ">",
+        "threshold": 80
+      }
+    },
+    "win_disk_space_critical": {
+      "title": "Disk Space Usage Critical (90%+)",
+      "domain": "Storage",
+      "severity": "critical",
+      "condition": "max_disk_used_pct > 90",
+      "threshold": "90",
+      "recommendation": "A volume is over 90% full. Windows services may fail or produce errors when disk space is exhausted. Immediately free space or expand the volume.",
+      "metadata_json": {
+        "metric_name": "max_disk_used_pct",
+        "operator": ">",
+        "threshold": 90
+      }
+    },
+    "win_disk_read_latency_high": {
+      "title": "Disk Read Latency High (>20 ms)",
+      "domain": "Storage",
+      "severity": "warning",
+      "condition": "avg_disk_read_ms > 20",
+      "threshold": "20",
+      "recommendation": "Average disk read latency exceeds 20 ms. Acceptable for HDD but concerning for SSD/NVMe. Check for disk fragmentation, failing drives, or storage contention. Consider enabling Write Caching.",
+      "metadata_json": {
+        "metric_name": "avg_disk_read_ms",
+        "operator": ">",
+        "threshold": 20
+      }
+    },
+    "win_disk_write_latency_high": {
+      "title": "Disk Write Latency High (>20 ms)",
+      "domain": "Storage",
+      "severity": "warning",
+      "condition": "avg_disk_write_ms > 20",
+      "threshold": "20",
+      "recommendation": "Average disk write latency exceeds 20 ms. Review I/O patterns and check for disk health issues using SMART data. Check for antivirus real-time scanning on busy directories.",
+      "metadata_json": {
+        "metric_name": "avg_disk_write_ms",
+        "operator": ">",
+        "threshold": 20
+      }
+    },
+    "win_network_errors_warning": {
+      "title": "Network Receive Errors Detected",
+      "domain": "Network",
+      "severity": "warning",
+      "condition": "total_receive_errors > 100",
+      "threshold": "100",
+      "recommendation": "Network adapter receive errors are accumulating. Check cable connections, NIC driver, and duplex settings. Run Get-NetAdapterStatistics to identify the affected adapter.",
+      "metadata_json": {
+        "metric_name": "total_receive_errors",
+        "operator": ">",
+        "threshold": 100
+      }
+    },
+    "win_network_errors_critical": {
+      "title": "Network Receive Errors Critical",
+      "domain": "Network",
+      "severity": "critical",
+      "condition": "total_receive_errors > 1000",
+      "threshold": "1000",
+      "recommendation": "High network error rate indicates a hardware or driver problem. Replace the cable, check the switch port, or update the NIC driver. This may cause packet loss affecting all services.",
+      "metadata_json": {
+        "metric_name": "total_receive_errors",
+        "operator": ">",
+        "threshold": 1000
+      }
+    },
+    "win_critical_service_stopped": {
+      "title": "Critical Windows Service Stopped",
       "domain": "Availability",
+      "severity": "critical",
+      "condition": "critical_services_stopped > 0",
+      "threshold": "0",
+      "recommendation": "One or more critical Windows services (WMI, Event Log, RPC, DHCP, etc.) are not running. This can cause cascading failures. Check Services (services.msc) and Event Log for the stop reason.",
+      "metadata_json": {
+        "metric_name": "critical_services_stopped",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "win_services_stopped_many": {
+      "title": "Many Services Stopped",
+      "domain": "Availability",
+      "severity": "warning",
+      "condition": "stopped_services > 10",
+      "threshold": "10",
+      "recommendation": "More than 10 non-disabled services are in Stopped state. Review win.services_details to identify which services have stopped unexpectedly. Check Event Log for crash or dependency failure events.",
+      "metadata_json": {
+        "metric_name": "stopped_services",
+        "operator": ">",
+        "threshold": 10
+      }
+    },
+    "win_event_errors_warning": {
+      "title": "Event Log Error Rate High",
+      "domain": "Event Log",
       "severity": "warning",
       "condition": "event_error_count > 50",
       "threshold": "50",
-      "recommendation": "Review Windows Event Viewer for Application and System error sources.",
+      "recommendation": "More than 50 Error-level events in the past hour. Review win.event_log_details to identify the sources. Common causes: application crashes, driver errors, disk warnings, or service failures.",
       "metadata_json": {
         "metric_name": "event_error_count",
         "operator": ">",
         "threshold": 50
       }
+    },
+    "win_event_errors_critical": {
+      "title": "Event Log Error Rate Critical",
+      "domain": "Event Log",
+      "severity": "critical",
+      "condition": "event_error_count > 200",
+      "threshold": "200",
+      "recommendation": "Over 200 errors in the past hour indicates a systemic problem. Review Event Viewer immediately for the dominant error source. Consider whether an impending hardware failure or application loop is the cause.",
+      "metadata_json": {
+        "metric_name": "event_error_count",
+        "operator": ">",
+        "threshold": 200
+      }
+    },
+    "win_critical_events_detected": {
+      "title": "Critical-Level Events in Event Log",
+      "domain": "Event Log",
+      "severity": "warning",
+      "condition": "critical_event_count > 0",
+      "threshold": "0",
+      "recommendation": "Critical-level events (Level 1) have been recorded. These represent the most severe system issues. Review win.event_log_details filtering by level 'Critical' and investigate immediately.",
+      "metadata_json": {
+        "metric_name": "critical_event_count",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "win_failed_logons_warning": {
+      "title": "Failed Logon Attempts Elevated",
+      "domain": "Security",
+      "severity": "warning",
+      "condition": "failed_logon_count > 20",
+      "threshold": "20",
+      "recommendation": "More than 20 failed logon attempts in the past hour (Event 4625). May indicate brute-force attempts or misconfigured services. Review the source IPs and accounts in Event Viewer Security log.",
+      "metadata_json": {
+        "metric_name": "failed_logon_count",
+        "operator": ">",
+        "threshold": 20
+      }
+    },
+    "win_failed_logons_critical": {
+      "title": "Failed Logon Attempts Critical — Possible Brute-Force",
+      "domain": "Security",
+      "severity": "critical",
+      "condition": "failed_logon_count > 100",
+      "threshold": "100",
+      "recommendation": "Over 100 failed logons in an hour is a strong indicator of a brute-force attack. Block the source IP at the firewall level, enable account lockout policy, and verify no accounts have been compromised.",
+      "metadata_json": {
+        "metric_name": "failed_logon_count",
+        "operator": ">",
+        "threshold": 100
+      }
+    },
+    "win_account_lockouts_detected": {
+      "title": "Account Lockout Detected",
+      "domain": "Security",
+      "severity": "warning",
+      "condition": "account_lockout_count > 0",
+      "threshold": "0",
+      "recommendation": "One or more accounts were locked out in the past hour (Event 4740). This may indicate a brute-force attack or a stale cached credential from a service or scheduled task. Investigate the source workstation and account.",
+      "metadata_json": {
+        "metric_name": "account_lockout_count",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "win_admin_accounts_high": {
+      "title": "Excessive Local Administrator Accounts",
+      "domain": "Security",
+      "severity": "warning",
+      "condition": "admin_group_members > 5",
+      "threshold": "5",
+      "recommendation": "More than 5 accounts are members of the local Administrators group. Follow the principle of least privilege. Remove unnecessary admin memberships and use dedicated service accounts with minimal permissions.",
+      "metadata_json": {
+        "metric_name": "admin_group_members",
+        "operator": ">",
+        "threshold": 5
+      }
+    },
+    "win_pending_reboot": {
+      "title": "System Restart Pending",
+      "domain": "Configuration",
+      "severity": "warning",
+      "condition": "pending_reboot > 0",
+      "threshold": "0",
+      "recommendation": "Windows has flagged that a restart is required (likely for a Windows Update or driver installation). Schedule a maintenance window to reboot. Running with pending updates may leave security patches unapplied.",
+      "metadata_json": {
+        "metric_name": "pending_reboot",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "win_patches_outdated": {
+      "title": "System Not Patched for 90+ Days",
+      "domain": "Configuration",
+      "severity": "warning",
+      "condition": "last_patch_days_ago > 90",
+      "threshold": "90",
+      "recommendation": "No Windows updates have been installed in over 90 days. This server may be missing critical security patches. Run Windows Update immediately or investigate why automatic updates are not applying.",
+      "metadata_json": {
+        "metric_name": "last_patch_days_ago",
+        "operator": ">",
+        "threshold": 90
+      }
     }
+  },
+  "charts": [
+    {
+      "key": "cpu_usage_percent",
+      "title": "CPU Usage %",
+      "chart_type": "line",
+      "metric_name": "cpu_usage_percent",
+      "domain": "Compute",
+      "thresholds": [],
+      "config_json": {}
+    },
+    {
+      "key": "memory_used_percent",
+      "title": "Memory Usage %",
+      "chart_type": "line",
+      "metric_name": "memory_used_percent",
+      "domain": "Compute",
+      "thresholds": [],
+      "config_json": {}
+    },
+    {
+      "key": "max_disk_used_pct",
+      "title": "Max Disk Usage %",
+      "chart_type": "line",
+      "metric_name": "max_disk_used_pct",
+      "domain": "Storage",
+      "thresholds": [],
+      "config_json": {}
+    },
+    {
+      "key": "event_error_count",
+      "title": "Event Log Errors / Hour",
+      "chart_type": "line",
+      "metric_name": "event_error_count",
+      "domain": "Event Log",
+      "thresholds": [],
+      "config_json": {}
+    }
+  ],
+  "analysis_hints": [
+    {
+      "category": "CPU & Performance",
+      "target_type_id": "windows_server",
+      "hints": [
+        "What is the current CPU utilization trend and are there any processes causing CPU spikes?",
+        "Is the processor queue length a concern for this server's workload?",
+        "Which processes are consuming the most CPU time right now?",
+        "Are there any signs of CPU throttling or power management affecting performance?",
+        "Should this server's workload be redistributed to other hosts?"
+      ]
+    },
+    {
+      "category": "Memory & Storage",
+      "target_type_id": "windows_server",
+      "hints": [
+        "Is the memory usage within acceptable bounds, or is the server under memory pressure?",
+        "Which processes are consuming the most memory and could any be restarted to reclaim it?",
+        "Are any disk volumes approaching capacity? Which one needs attention first?",
+        "Is disk I/O latency within acceptable thresholds for the storage type (HDD vs SSD)?",
+        "Are there signs of excessive paging or virtual memory pressure?"
+      ]
+    },
+    {
+      "category": "Services & Availability",
+      "target_type_id": "windows_server",
+      "hints": [
+        "Are any critical Windows services stopped or in an unexpected state?",
+        "What is the server uptime and were there any recent unexpected reboots?",
+        "Are there any services that have failed and may need to be restarted?",
+        "Is the TCP connection profile normal or are there signs of connection leaks or port exhaustion?"
+      ]
+    },
+    {
+      "category": "Event Log & Security",
+      "target_type_id": "windows_server",
+      "hints": [
+        "Are there any critical or error events in the Windows Event Log that need immediate attention?",
+        "What are the dominant event sources generating the most errors?",
+        "Are there signs of a brute-force attack or unusual failed logon patterns?",
+        "Are the local Administrator group members appropriate, or should any be removed?",
+        "Is this server patched and up-to-date? Does it have a pending reboot for updates?"
+      ]
+    },
+    {
+      "category": "Summary & Recommendations",
+      "target_type_id": "windows_server",
+      "hints": [
+        "Provide an executive summary of this Windows server's overall health.",
+        "What are the top 3 most urgent issues to address on this server right now?",
+        "What proactive maintenance tasks would improve the stability of this server over the next 30 days?",
+        "Based on the findings and metrics, what is the overall risk level for this server?"
+      ]
+    }
+  ],
+  "ui_contributions": {
+    "plugin_label": "Windows Server Monitoring",
+    "nav_pages": [],
+    "operations_tabs": [],
+    "target_workspace_tabs": [
+      "Control Center",
+      "CPU & Performance",
+      "Memory",
+      "Storage",
+      "Disk I/O",
+      "Network",
+      "Services",
+      "Processes",
+      "Event Log",
+      "Security Monitor",
+      "System Info",
+      "Best Practices",
+      "Custom Collectors",
+      "Host Diagnose",
+      "Alert Events",
+      "Target Readiness"
+    ]
   }
 }

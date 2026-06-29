@@ -62,22 +62,60 @@ def test_connection(params: dict) -> dict:
         return result
 
 
+_PSS_DEPENDENT_KEYS = {"pg17_query_temp_spills", "pg17_top_queries_pg_stat_statements", "pg17_slow_queries_by_mean"}
+
+# Fallback queries embedded here so collectors work even if config_json is
+# stale (plugin registered before these entries were added to the manifest).
+_PSS_FALLBACK_QUERIES: dict[str, str] = {
+    "pg17_query_temp_spills": (
+        "SELECT count(*) FILTER (WHERE temp_blks_read + temp_blks_written > 0) AS queries_with_temp_spill,"
+        " COALESCE(max((temp_blks_read + temp_blks_written) * 8.0 / 1024), 0) AS max_temp_spill_mb"
+        " FROM pg_stat_statements"
+    ),
+    "pg17_top_queries_pg_stat_statements": (
+        "SELECT substring(query, 1, 500) AS query, calls::int AS calls,"
+        " round(mean_exec_time::numeric, 2) AS query_mean_exec_ms,"
+        " round(total_exec_time::numeric, 2) AS total_exec_time_ms,"
+        " rows::int AS total_rows"
+        " FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 25"
+    ),
+    "pg17_slow_queries_by_mean": (
+        "SELECT substring(query, 1, 500) AS query, calls::int AS calls,"
+        " round(mean_exec_time::numeric, 2) AS mean_exec_time_ms,"
+        " round(stddev_exec_time::numeric, 2) AS stddev_exec_time_ms,"
+        " round(total_exec_time::numeric, 2) AS total_exec_time_ms,"
+        " rows::int AS total_rows,"
+        " round(shared_blks_read::numeric / NULLIF(shared_blks_hit + shared_blks_read, 0) * 100, 1) AS cache_miss_pct"
+        " FROM pg_stat_statements WHERE calls > 3 ORDER BY mean_exec_time DESC LIMIT 25"
+    ),
+    "pg17_log_entries": (
+        "WITH latest_log AS ("
+        " SELECT current_setting('log_directory') || '/' || name AS log_file_path,"
+        "        name AS log_file, modification AS last_modified, size::bigint AS size_bytes"
+        " FROM pg_ls_logdir()"
+        " WHERE name ~ '\\.(log|csv|json)$'"
+        " ORDER BY modification DESC LIMIT 1"
+        ")"
+        " SELECT log_file, log_file_path, last_modified,"
+        "        pg_size_pretty(size_bytes) AS file_size,"
+        "        pg_read_file(log_file_path, GREATEST(0, size_bytes - 32768), LEAST(size_bytes, 32768)) AS recent_lines"
+        " FROM latest_log WHERE size_bytes > 0"
+    ),
+}
+
+
 def run_collector(collector_key: str, params: dict, query_params: dict) -> dict:
     try:
         import psycopg
     except ImportError:
         raise RuntimeError("psycopg not installed in backend container.")
 
-    query = query_params.get("query")
-    if not query:
-        raise ValueError(f"No query configured for collector '{collector_key}'.")
-
     env_name = params.get("connection_env")
     if env_name:
         dsn = os.getenv(str(env_name))
         if dsn:
             with psycopg.connect(dsn, connect_timeout=5) as conn:
-                return _execute_query(conn, query)
+                return _dispatch(conn, collector_key, query_params)
 
     host = str(params.get("host", ""))
     if not host:
@@ -89,7 +127,88 @@ def run_collector(collector_key: str, params: dict, query_params: dict) -> dict:
     password = params.get("password") or None
 
     with psycopg.connect(host=host, port=port, dbname=database, user=user, password=password, connect_timeout=5) as conn:
-        return _execute_query(conn, query)
+        return _dispatch(conn, collector_key, query_params)
+
+
+_LOG_READER_KEYS = {"pg17_log_entries"}
+
+
+def _dispatch(conn, collector_key: str, query_params: dict) -> dict:
+    if collector_key in _LOG_READER_KEYS:
+        return _read_log_entries(conn, query_params)
+
+    # Use config_json query first; fall back to embedded query for collectors
+    # where config_json may be stale (old plugin install).
+    query = query_params.get("query") or _PSS_FALLBACK_QUERIES.get(collector_key)
+    if not query:
+        raise ValueError(f"No query configured for collector '{collector_key}'.")
+
+    if collector_key in _PSS_DEPENDENT_KEYS:
+        return _execute_query_pss(conn, query)
+
+    return _execute_query(conn, query)
+
+
+def _execute_query_pss(conn, query: str) -> dict:
+    """Run a query that depends on pg_stat_statements. Returns a friendly empty result
+    instead of failing if the extension is not installed."""
+    conn.autocommit = True
+    with conn.cursor() as cursor:
+        try:
+            cursor.execute("SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'pg_stat_statements'")
+            if not cursor.fetchone():
+                return {
+                    "_rows": [{"status": "pg_stat_statements extension is not installed",
+                               "fix": "Run: CREATE EXTENSION pg_stat_statements; and add it to shared_preload_libraries"}],
+                    "_columns": ["status", "fix"],
+                }
+        except Exception:
+            pass  # pg_catalog is always available; ignore any unexpected error
+    return _execute_query(conn, query)
+
+
+# ---------------------------------------------------------------------------
+# Stateful log reader — PostgreSQL transport
+# ---------------------------------------------------------------------------
+# The engine (chunking, rotation detection, state tracking, zero-loss
+# guarantees) lives in app.utils.log_reader — shared across all plugins.
+# This section provides only the two PostgreSQL-specific transport functions:
+#   list_files  — discovers log files via pg_ls_logdir()
+#   read_bytes  — reads file content via pg_read_file()
+# ---------------------------------------------------------------------------
+
+def _read_log_entries(conn, query_params: dict) -> dict:
+    """PostgreSQL log collector — thin transport wrapper over the shared engine."""
+    from opsdb_sdk.log_reader import run_log_reader
+
+    conn.autocommit = True
+
+    def list_files() -> list[dict]:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT current_setting('log_directory') || '/' || name AS path,
+                       name,
+                       size::bigint AS size
+                FROM pg_ls_logdir()
+                WHERE name ~ '\\.(log|csv|json)$'
+                ORDER BY modification DESC
+                LIMIT 5
+            """)
+            cols = [c.name for c in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def read_bytes(path: str, offset: int, size: int) -> str:
+        if size <= 0:
+            return ""
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_read_file(%s, %s, %s)", [path, offset, size])
+            return cur.fetchone()[0] or ""
+
+    return run_log_reader(
+        prev_state=query_params.get("_prev_state") or {},
+        list_files=list_files,
+        read_bytes=read_bytes,
+    )
 
 
 def _execute_query(conn, query: str) -> dict:
