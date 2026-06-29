@@ -1,7 +1,7 @@
 {
   "key": "opsdb.postgresql",
   "name": "PostgreSQL Observability",
-  "version": "1.7.0",
+  "version": "2.0.0",
   "author": "OpsDB Platform",
   "description": "Monitor PostgreSQL 17 databases: availability, sessions, blocking, replication, WAL, vacuum, indexes, security, query performance, EXPLAIN plan analysis, alert event tracking, and metric drill-down panels.",
   "license_feature": "opsdb.postgresql",
@@ -87,76 +87,89 @@
           "Target Readiness"
         ],
         "collectors": [
-          "pg17_availability",
+          "pg17_active_queries",
           "pg17_activity_sessions",
-          "pg17_session_details",
+          "pg17_analyze_progress",
+          "pg17_autovacuum_activity",
+          "pg17_availability",
           "pg17_blocking_locks",
-          "pg17_long_transactions",
-          "pg17_database_stats",
-          "pg17_io_stats",
-          "pg17_wal_stats",
           "pg17_checkpoint_bgwriter",
+          "pg17_configuration_baseline",
+          "pg17_database_privileges",
+          "pg17_database_sizes",
+          "pg17_database_stats",
+          "pg17_extension_inventory",
+          "pg17_index_usage",
+          "pg17_invalid_indexes",
+          "pg17_io_stats",
+          "pg17_lock_tree",
+          "pg17_log_entries",
+          "pg17_long_transactions",
+          "pg17_partition_overview",
           "pg17_physical_replication",
-          "pg17_wal_receiver",
+          "pg17_prepared_transactions",
+          "pg17_query_temp_spills",
+          "pg17_recent_errors",
           "pg17_replication_slots",
+          "pg17_role_security",
+          "pg17_seq_scan_hotspots",
+          "pg17_slow_queries_by_mean",
           "pg17_subscription_status",
           "pg17_subscription_table_sync",
-          "pg17_table_vacuum_pressure",
-          "pg17_vacuum_progress",
-          "pg17_analyze_progress",
-          "pg17_index_usage",
+          "pg17_table_activity",
+          "pg17_table_io_hotspots",
           "pg17_table_sizes",
-          "pg17_database_sizes",
+          "pg17_table_vacuum_pressure",
           "pg17_top_queries_pg_stat_statements",
-          "pg17_query_temp_spills",
-          "pg17_configuration_baseline",
-          "pg17_extension_inventory",
-          "pg17_role_security",
-          "pg17_database_privileges",
-          "pg17_autovacuum_activity",
-          "pg17_prepared_transactions",
-          "pg17_invalid_indexes",
-          "pg17_partition_overview",
-          "pg17_xid_wraparound",
-          "pg17_table_activity"
+          "pg17_vacuum_progress",
+          "pg17_wait_events",
+          "pg17_wal_receiver",
+          "pg17_wal_stats",
+          "pg17_xid_wraparound"
         ],
         "findings": [
-          "pg17_connection_usage_warning",
-          "pg17_connection_usage_critical",
-          "pg17_idle_in_transaction_warning",
-          "pg17_idle_in_transaction_critical",
-          "pg17_waiting_sessions_detected",
-          "pg17_long_active_query_warning",
-          "pg17_long_active_query_critical",
           "pg17_blocking_lock_detected",
           "pg17_blocking_lock_prolonged",
-          "pg17_long_transaction_warning",
-          "pg17_long_transaction_critical",
-          "pg17_cache_hit_low_warning",
           "pg17_cache_hit_low_critical",
-          "pg17_deadlocks_detected",
-          "pg17_replication_lag_bytes_warning",
-          "pg17_replication_lag_bytes_critical",
-          "pg17_replication_lag_seconds_warning",
-          "pg17_replication_lag_seconds_critical",
-          "pg17_inactive_replication_slot",
-          "pg17_retained_wal_warning",
-          "pg17_retained_wal_critical",
-          "pg17_checkpoint_ratio_warning",
+          "pg17_cache_hit_low_warning",
           "pg17_checkpoint_ratio_critical",
-          "pg17_dead_tuple_pct_warning",
+          "pg17_checkpoint_ratio_warning",
+          "pg17_connection_usage_critical",
+          "pg17_connection_usage_warning",
           "pg17_dead_tuple_pct_critical",
-          "pg17_old_prepared_transaction_warning",
-          "pg17_old_prepared_transaction_critical",
+          "pg17_dead_tuple_pct_warning",
+          "pg17_deadlocks_detected",
+          "pg17_high_seq_scan_ratio",
+          "pg17_idle_in_transaction_critical",
+          "pg17_idle_in_transaction_warning",
+          "pg17_inactive_replication_slot",
           "pg17_invalid_index_found",
-          "pg17_superuser_count_high",
-          "pg17_settings_pending_restart",
-          "pg17_xid_wraparound_warning",
-          "pg17_xid_wraparound_critical",
-          "pg17_ssl_disabled",
+          "pg17_io_wait_sessions_high",
+          "pg17_large_table_no_index",
+          "pg17_lock_wait_sessions",
+          "pg17_long_active_query_critical",
+          "pg17_long_active_query_warning",
+          "pg17_long_transaction_critical",
+          "pg17_long_transaction_warning",
           "pg17_no_idle_txn_timeout",
+          "pg17_old_prepared_transaction_critical",
+          "pg17_old_prepared_transaction_warning",
+          "pg17_replication_lag_bytes_critical",
+          "pg17_replication_lag_bytes_warning",
+          "pg17_replication_lag_seconds_critical",
+          "pg17_replication_lag_seconds_warning",
+          "pg17_retained_wal_critical",
+          "pg17_retained_wal_warning",
+          "pg17_settings_pending_restart",
+          "pg17_slow_query_critical",
+          "pg17_slow_query_detected",
+          "pg17_ssl_disabled",
+          "pg17_superuser_count_high",
           "pg17_synchronous_commit_off",
-          "pg17_high_seq_scan_ratio"
+          "pg17_table_cache_miss",
+          "pg17_waiting_sessions_detected",
+          "pg17_xid_wraparound_critical",
+          "pg17_xid_wraparound_warning"
         ],
         "workflow_nodes": [
           "run_postgres_collector",
@@ -183,19 +196,11 @@
     },
     "pg17_activity_sessions": {
       "domain": "Activity",
-      "description": "Session breakdown: total, active, idle, idle-in-transaction, waiting; connection usage percentage versus max_connections.",
+      "description": "Session state counts (total/active/idle/idle-in-transaction/waiting), connection usage percentage, and time-based risk metrics: longest active query, longest idle-in-transaction, and longest wait in seconds.",
       "default_frequency": "1 minute",
-      "query": "WITH s AS (SELECT setting::int AS max_connections FROM pg_settings WHERE name = 'max_connections') SELECT count(*) AS total_sessions, count(*) FILTER (WHERE state = 'active') AS active_sessions, count(*) FILTER (WHERE state = 'idle') AS idle_sessions, count(*) FILTER (WHERE state = 'idle in transaction') AS idle_in_transaction_sessions, count(*) FILTER (WHERE state = 'idle in transaction (aborted)') AS idle_in_transaction_aborted_sessions, count(*) FILTER (WHERE wait_event IS NOT NULL) AS waiting_sessions, s.max_connections, round((count(*)::numeric / NULLIF(s.max_connections, 0)) * 100, 2) AS connection_usage_pct FROM pg_stat_activity a CROSS JOIN s WHERE a.pid <> pg_backend_pid() GROUP BY s.max_connections",
+      "query": "WITH s AS ( SELECT setting::int AS max_connections FROM pg_settings WHERE name = 'max_connections'), agg AS ( SELECT   count(*)                                                            AS total_sessions,   count(*) FILTER (WHERE state = 'active')                           AS active_sessions,   count(*) FILTER (WHERE state = 'idle')                             AS idle_sessions,   count(*) FILTER (WHERE state = 'idle in transaction')              AS idle_in_transaction_sessions,   count(*) FILTER (WHERE state = 'idle in transaction (aborted)')    AS idle_in_transaction_aborted_sessions,   count(*) FILTER (WHERE wait_event_type IS NOT NULL)                AS waiting_sessions,   round(count(*)::numeric * 100.0 / NULLIF((SELECT max_connections FROM s), 0), 1)                                                                       AS connection_usage_pct,   COALESCE(EXTRACT(EPOCH FROM max(now() - query_start)     FILTER (WHERE state = 'active'))::numeric, 0)                    AS max_active_query_seconds,   COALESCE(EXTRACT(EPOCH FROM max(now() - xact_start)     FILTER (WHERE state = 'idle in transaction'))::numeric, 0)       AS max_idle_xact_seconds,   COALESCE(EXTRACT(EPOCH FROM max(now() - query_start)     FILTER (WHERE wait_event_type IS NOT NULL))::numeric, 0)         AS max_wait_seconds FROM pg_stat_activity WHERE pid <> pg_backend_pid()) SELECT (SELECT max_connections FROM s) AS max_connections, agg.* FROM agg",
       "units": {
-        "connection_usage_pct": "percent"
-      }
-    },
-    "pg17_session_details": {
-      "domain": "Activity",
-      "description": "Aggregate risk metrics for active and risky sessions: longest active query (seconds), longest idle-in-transaction (seconds), longest wait (seconds).",
-      "default_frequency": "1 minute",
-      "query": "SELECT count(*) AS risky_session_count, count(*) FILTER (WHERE state = 'active') AS long_active_count, COALESCE(EXTRACT(EPOCH FROM max(now() - query_start) FILTER (WHERE state = 'active')), 0)::numeric AS max_active_query_seconds, COALESCE(EXTRACT(EPOCH FROM max(now() - xact_start) FILTER (WHERE state LIKE 'idle in transaction%')), 0)::numeric AS max_idle_xact_seconds, COALESCE(EXTRACT(EPOCH FROM max(now() - query_start) FILTER (WHERE wait_event IS NOT NULL)), 0)::numeric AS max_wait_seconds FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND (state = 'active' OR state LIKE 'idle in transaction%' OR wait_event IS NOT NULL)",
-      "units": {
+        "connection_usage_pct": "%",
         "max_active_query_seconds": "seconds",
         "max_idle_xact_seconds": "seconds",
         "max_wait_seconds": "seconds"
@@ -295,9 +300,9 @@
     },
     "pg17_subscription_table_sync": {
       "domain": "Replication",
-      "description": "Total subscribed tables, tables in ready state, and tables still synchronising.",
+      "description": "Logical replication subscription table sync status: total subscribed tables, tables in ready state, and tables still synchronising.",
       "default_frequency": "15 minutes",
-      "query": "SELECT count(*) AS total_tables, count(*) FILTER (WHERE srsubstate = 'r') AS ready_tables, count(*) FILTER (WHERE srsubstate <> 'r') AS syncing_tables FROM pg_subscription_rel"
+      "query": "SELECT count(*) AS subscribed_tables, count(*) FILTER (WHERE srsubstate = 'r') AS ready_tables, count(*) FILTER (WHERE srsubstate <> 'r') AS syncing_tables FROM pg_subscription_rel"
     },
     "pg17_table_vacuum_pressure": {
       "domain": "Vacuum",
@@ -353,9 +358,9 @@
     },
     "pg17_top_queries_pg_stat_statements": {
       "domain": "Query Performance",
-      "description": "Tracked query count, maximum mean execution time in ms, and total temp block spill in MB (requires pg_stat_statements extension).",
+      "description": "Top 25 queries ordered by total cumulative execution time from pg_stat_statements. Best for finding queries that consume the most overall DB time. See pg17_slow_queries_by_mean for queries slowest per individual call.",
       "default_frequency": "5 minutes",
-      "query": "SELECT substring(query, 1, 500) AS query, calls::int AS calls, round(mean_exec_time::numeric, 2) AS mean_exec_time_ms, round(total_exec_time::numeric, 2) AS total_exec_time_ms, rows::int AS total_rows FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 25",
+      "query": "SELECT substring(query, 1, 500) AS query, calls::int AS calls, round(mean_exec_time::numeric, 2) AS query_mean_exec_ms, round(total_exec_time::numeric, 2) AS total_exec_time_ms, rows::int AS total_rows FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 25",
       "units": {
         "max_mean_exec_time_ms": "ms",
         "total_temp_spill_mb": "MB"
@@ -441,7 +446,7 @@
     },
     "pg17_xid_wraparound": {
       "domain": "Availability",
-      "description": "XID age per database — exceeding 2.1 billion causes PostgreSQL to forcibly shut down to prevent wraparound data corruption. This is the #1 cause of unplanned PG outages.",
+      "description": "XID age per database \u2014 exceeding 2.1 billion causes PostgreSQL to forcibly shut down to prevent wraparound data corruption. This is the #1 cause of unplanned PG outages.",
       "default_frequency": "1 hour",
       "query": "SELECT max(age(datfrozenxid)) AS max_xid_age, count(*) FILTER (WHERE age(datfrozenxid) > 1500000000) AS databases_near_wraparound, count(*) FILTER (WHERE age(datfrozenxid) > 200000000) AS databases_needing_freeze, COALESCE(min(2147483647 - age(datfrozenxid)), 0) AS min_xids_until_wraparound FROM pg_database WHERE datallowconn"
     },
@@ -455,34 +460,77 @@
         "hot_update_pct": "percent"
       }
     },
-    "postgres.activity_locks": {
+    "pg17_wait_events": {
       "domain": "Activity",
-      "description": "[Legacy v1.0] Active sessions, waiting sessions, idle-in-transaction, and blocked lock counts.",
+      "description": "Breakdown of what sessions are waiting for (Lock, IO, LWLock, Client, CPU/running). Includes aggregate wait-type counts in the first row for finding evaluation. THE primary tool for diagnosing why queries are slow.",
+      "default_frequency": "1 minute",
+      "query": "WITH events AS (  SELECT COALESCE(wait_event_type,'CPU') AS wait_event_type,         COALESCE(wait_event,'Running') AS wait_event,         count(*) AS session_count  FROM pg_stat_activity  WHERE pid <> pg_backend_pid() AND state NOT IN ('idle')  GROUP BY 1,2),summary AS (  SELECT    count(*) FILTER (WHERE wait_event_type = 'Lock')   AS lock_wait_sessions,    count(*) FILTER (WHERE wait_event_type = 'IO')     AS io_wait_sessions,    count(*) FILTER (WHERE wait_event_type = 'LWLock') AS lwlock_wait_sessions,    count(*) FILTER (WHERE wait_event_type = 'Client') AS client_wait_sessions  FROM pg_stat_activity  WHERE pid <> pg_backend_pid() AND state NOT IN ('idle') AND wait_event_type IS NOT NULL)SELECT e.wait_event_type, e.wait_event, e.session_count,       s.lock_wait_sessions, s.io_wait_sessions, s.lwlock_wait_sessions, s.client_wait_sessions FROM events e, summary s ORDER BY e.session_count DESC",
+      "units": {}
+    },
+    "pg17_active_queries": {
+      "domain": "Activity",
+      "description": "Snapshot of all non-idle sessions: PID, user, application, state, wait event, query age, transaction age, and truncated query text. Use this to see exactly what is running and waiting right now.",
+      "default_frequency": "1 minute",
+      "query": "SELECT pid,       usename,       application_name,       client_addr::text AS client_addr,       state,       COALESCE(wait_event_type,'\u2014') AS wait_event_type,       COALESCE(wait_event,'\u2014') AS wait_event,       round(EXTRACT(EPOCH FROM (now() - query_start))::numeric, 1) AS query_age_seconds,       round(EXTRACT(EPOCH FROM (now() - xact_start))::numeric, 1) AS xact_age_seconds,       left(query, 300) AS query_text FROM pg_stat_activity WHERE state NOT IN ('idle') AND pid <> pg_backend_pid() ORDER BY query_age_seconds DESC NULLS LAST LIMIT 30",
+      "units": {
+        "query_age_seconds": "seconds",
+        "xact_age_seconds": "seconds"
+      }
+    },
+    "pg17_lock_tree": {
+      "domain": "Locks",
+      "description": "Full blocking chain: for each blocked backend shows who is blocking it, on which relation, what type of lock, and both query texts. Drill-down complement to pg17_blocking_locks.",
+      "default_frequency": "1 minute",
+      "query": "SELECT  blocked.pid                                                    AS blocked_pid,  blocked.usename                                                AS blocked_user,  left(blocked.query, 250)                                       AS blocked_query,  round(EXTRACT(EPOCH FROM (now()-blocked.query_start))::numeric,1) AS blocked_seconds,  blocker.pid                                                    AS blocker_pid,  blocker.usename                                                AS blocker_user,  left(blocker.query, 250)                                       AS blocker_query,  COALESCE(blocked_locks.locktype,'')                            AS lock_type,  COALESCE(blocked_locks.relation::regclass::text,'')            AS locked_relation FROM pg_locks blocked_locks JOIN pg_stat_activity blocked  ON blocked_locks.pid = blocked.pid JOIN pg_locks blocker_locks   ON  blocker_locks.locktype = blocked_locks.locktype   AND blocker_locks.relation IS NOT DISTINCT FROM blocked_locks.relation   AND blocker_locks.granted AND NOT blocked_locks.granted JOIN pg_stat_activity blocker ON blocker_locks.pid = blocker.pid ORDER BY blocked_seconds DESC NULLS LAST LIMIT 20",
+      "units": {
+        "blocked_seconds": "seconds"
+      }
+    },
+    "pg17_table_io_hotspots": {
+      "domain": "I/O",
+      "description": "Per-table cache hit ratios from pg_statio_user_tables. First row reports the minimum cache hit percentage across all user tables (min_table_cache_hit_pct) and count of tables below 90% hit rate. Subsequent rows detail each table.",
       "default_frequency": "5 minutes",
-      "query": "SELECT count(*) FILTER (WHERE state = 'active') AS active_sessions, count(*) FILTER (WHERE wait_event_type IS NOT NULL) AS waiting_sessions, count(*) FILTER (WHERE state = 'idle in transaction') AS idle_in_transaction_sessions, (SELECT count(*) FROM pg_locks WHERE NOT granted) AS blocked_locks FROM pg_stat_activity",
-      "result_mapping": "columns"
+      "query": "WITH tio AS (  SELECT schemaname, relname,         heap_blks_read, heap_blks_hit,         round(heap_blks_hit::numeric / NULLIF(heap_blks_hit + heap_blks_read, 0) * 100, 1) AS cache_hit_pct,         (heap_blks_read + heap_blks_hit) AS total_heap_access  FROM pg_statio_user_tables  WHERE heap_blks_read + heap_blks_hit > 1000),summary AS (  SELECT round(min(cache_hit_pct), 1)                               AS min_table_cache_hit_pct,         count(*) FILTER (WHERE cache_hit_pct < 90)                  AS tables_below_90pct  FROM tio) SELECT t.schemaname, t.relname, t.cache_hit_pct, t.heap_blks_read, t.heap_blks_hit,        t.total_heap_access, s.min_table_cache_hit_pct, s.tables_below_90pct FROM tio t, summary s ORDER BY t.heap_blks_read DESC LIMIT 30",
+      "units": {
+        "cache_hit_pct": "percent",
+        "min_table_cache_hit_pct": "percent"
+      }
     },
-    "postgres.global_stats": {
+    "pg17_seq_scan_hotspots": {
       "domain": "Performance",
-      "description": "[Legacy v1.0] Cache hit ratio, transaction counts, deadlocks, temp usage, database size, and XID age.",
+      "description": "Per-table sequential scan counts and sizes. First row includes count of large tables (>100 MB) with >80% seq scan ratio \u2014 prime candidates for missing indexes. Use this to identify which tables need indexes added.",
       "default_frequency": "15 minutes",
-      "query": "SELECT coalesce(d.numbackends, 0) AS active_sessions, coalesce(d.xact_commit + d.xact_rollback, 0) AS total_transactions, CASE WHEN coalesce(d.blks_hit + d.blks_read, 0) = 0 THEN 0 ELSE round((d.blks_hit::numeric * 100.0) / nullif(d.blks_hit + d.blks_read, 0), 2) END AS cache_hit_percent, coalesce(d.deadlocks, 0) AS deadlocks, coalesce(d.temp_files, 0) AS temp_files, coalesce(d.temp_bytes, 0) AS temp_bytes, pg_database_size(current_database()) AS current_database_size_bytes, age(pg.datfrozenxid) AS max_freeze_age FROM pg_stat_database d JOIN pg_database pg ON pg.datname = d.datname WHERE d.datname = current_database()",
-      "result_mapping": "columns",
+      "query": "WITH scans AS (  SELECT schemaname, relname,         seq_scan, COALESCE(idx_scan, 0) AS idx_scan,         seq_tup_read, n_live_tup,         pg_total_relation_size(quote_ident(schemaname)||'.'||quote_ident(relname)) AS table_bytes,         round(seq_scan::numeric / NULLIF(seq_scan + COALESCE(idx_scan,0), 0) * 100, 1) AS table_seq_scan_pct  FROM pg_stat_user_tables  WHERE seq_scan > 50),summary AS (  SELECT count(*) FILTER (WHERE table_seq_scan_pct > 80 AND table_bytes > 104857600) AS large_tables_no_index,         max(seq_scan) AS max_seq_scan_count  FROM scans) SELECT s.schemaname, s.relname, s.seq_scan, s.idx_scan,        s.n_live_tup, s.table_seq_scan_pct,        pg_size_pretty(s.table_bytes) AS table_size,        sm.large_tables_no_index, sm.max_seq_scan_count FROM scans s, summary sm ORDER BY s.seq_scan DESC LIMIT 30",
+      "units": {}
+    },
+    "pg17_slow_queries_by_mean": {
+      "domain": "Query Performance",
+      "description": "Top 25 queries ordered by mean execution time (slowest individual queries). Includes stddev for plan instability detection. Requires pg_stat_statements. Complements pg17_top_queries_pg_stat_statements which sorts by total time.",
+      "default_frequency": "5 minutes",
+      "query": "SELECT substring(query, 1, 500)                           AS query,       calls::int                                         AS calls,       round(mean_exec_time::numeric, 2)                  AS mean_exec_time_ms,       round(stddev_exec_time::numeric, 2)                AS stddev_exec_time_ms,       round(total_exec_time::numeric, 2)                 AS total_exec_time_ms,       rows::int                                          AS total_rows,       round(shared_blks_read::numeric / NULLIF(shared_blks_hit + shared_blks_read,0)*100,1) AS cache_miss_pct FROM pg_stat_statements WHERE calls > 3 ORDER BY mean_exec_time DESC LIMIT 25",
       "units": {
-        "cache_hit_percent": "percent",
-        "temp_bytes": "bytes",
-        "current_database_size_bytes": "bytes"
+        "mean_exec_time_ms": "ms",
+        "stddev_exec_time_ms": "ms",
+        "total_exec_time_ms": "ms",
+        "cache_miss_pct": "percent"
       }
     },
-    "postgres.storage_vacuum": {
-      "domain": "Storage & Vacuum",
-      "description": "[Legacy v1.0] Live/dead tuple counts, dead tuple percentage, and vacuum/autovacuum run counts.",
-      "default_frequency": "15 minutes",
-      "query": "SELECT coalesce(sum(n_live_tup), 0) AS live_tuples, coalesce(sum(n_dead_tup), 0) AS dead_tuples, CASE WHEN coalesce(sum(n_live_tup + n_dead_tup), 0) = 0 THEN 0 ELSE round((sum(n_dead_tup)::numeric * 100.0) / nullif(sum(n_live_tup + n_dead_tup), 0), 2) END AS dead_tuple_percent, coalesce(sum(vacuum_count), 0) AS vacuum_count, coalesce(sum(autovacuum_count), 0) AS autovacuum_count FROM pg_stat_user_tables",
-      "result_mapping": "columns",
+    "pg17_recent_errors": {
+      "domain": "Logs",
+      "description": "Recent non-idle backend activity including errors, slow queries and problematic states from pg_stat_activity. Acts as a lightweight activity log when PostgreSQL file-based logging is unavailable.",
+      "default_frequency": "5 minutes",
+      "query": "SELECT pid,       usename,       application_name,       client_addr::text AS client_addr,       backend_type,       state,       COALESCE(wait_event_type,'\u2014') AS wait_event_type,       COALESCE(wait_event,'\u2014') AS wait_event,       round(EXTRACT(EPOCH FROM (now() - query_start))::numeric, 1) AS query_age_seconds,       round(EXTRACT(EPOCH FROM (now() - state_change))::numeric, 1) AS state_age_seconds,       left(query, 400) AS query_text FROM pg_stat_activity WHERE pid <> pg_backend_pid()   AND (state NOT IN ('idle') OR wait_event_type IS NOT NULL) ORDER BY query_age_seconds DESC NULLS LAST LIMIT 100",
       "units": {
-        "dead_tuple_percent": "percent"
+        "query_age_seconds": "seconds",
+        "state_age_seconds": "seconds"
       }
+    },
+    "pg17_log_entries": {
+      "domain": "Logs",
+      "description": "Reads the last 32 KB of the most recently modified PostgreSQL log file. Dynamically resolves the log directory and filename via pg_ls_logdir(). Requires pg_monitor role or superuser (pg_read_file + pg_ls_logdir).",
+      "default_frequency": "5 minutes",
+      "query": "WITH latest_log AS ( SELECT   current_setting('log_directory') || '/' || name AS log_file_path,   name                                             AS log_file,   modification                                     AS last_modified,   size::bigint                                     AS size_bytes FROM pg_ls_logdir() WHERE name ~ '\\.(log|csv|json)$' ORDER BY modification DESC LIMIT 1) SELECT   log_file,   log_file_path,   last_modified,   pg_size_pretty(size_bytes) AS file_size,   pg_read_file(     log_file_path,     GREATEST(0, size_bytes - 32768),     LEAST(size_bytes, 32768)   ) AS recent_lines FROM latest_log WHERE size_bytes > 0",
+      "units": {}
     }
   },
   "findings": {
@@ -877,22 +925,30 @@
       }
     },
     "pg17_xid_wraparound_warning": {
-      "title": "XID Wraparound Risk — Age Exceeds 1.5 Billion",
+      "title": "XID Wraparound Risk \u2014 Age Exceeds 1.5 Billion",
       "domain": "Availability",
       "severity": "warning",
       "condition": "max_xid_age >= 1500000000",
       "threshold": "1500000000",
       "recommendation": "One or more databases are approaching XID wraparound (limit: ~2.1B). Run VACUUM FREEZE on affected databases immediately and check autovacuum_freeze_max_age. Plan a maintenance VACUUM FREEZE if age > 1.9B.",
-      "metadata_json": { "metric_name": "max_xid_age", "operator": ">=", "threshold": 1500000000 }
+      "metadata_json": {
+        "metric_name": "max_xid_age",
+        "operator": ">=",
+        "threshold": 1500000000
+      }
     },
     "pg17_xid_wraparound_critical": {
-      "title": "XID Wraparound Imminent — Age Exceeds 2 Billion",
+      "title": "XID Wraparound Imminent \u2014 Age Exceeds 2 Billion",
       "domain": "Availability",
       "severity": "critical",
       "condition": "max_xid_age >= 2000000000",
       "threshold": "2000000000",
       "recommendation": "EMERGENCY: PostgreSQL will force-shutdown at ~2.1B XIDs to prevent data corruption. Run VACUUM FREEZE immediately. If the database is too large, consider pg_upgrade or coordinated freeze. Do not restart without running VACUUM FREEZE first.",
-      "metadata_json": { "metric_name": "max_xid_age", "operator": ">=", "threshold": 2000000000 }
+      "metadata_json": {
+        "metric_name": "max_xid_age",
+        "operator": ">=",
+        "threshold": 2000000000
+      }
     },
     "pg17_ssl_disabled": {
       "title": "SSL/TLS Not Enabled",
@@ -901,7 +957,11 @@
       "condition": "ssl_enabled = 0",
       "threshold": "0",
       "recommendation": "Enable SSL by setting ssl = on in postgresql.conf and providing ssl_cert_file / ssl_key_file. All connections should be encrypted in transit. Enforce via pg_hba.conf using hostssl entries.",
-      "metadata_json": { "metric_name": "ssl_enabled", "operator": "=", "threshold": 0 }
+      "metadata_json": {
+        "metric_name": "ssl_enabled",
+        "operator": "=",
+        "threshold": 0
+      }
     },
     "pg17_no_idle_txn_timeout": {
       "title": "idle_in_transaction_session_timeout Not Set",
@@ -910,16 +970,24 @@
       "condition": "idle_in_transaction_session_timeout_ms = 0",
       "threshold": "0",
       "recommendation": "Set idle_in_transaction_session_timeout = '60s' to automatically terminate sessions that hold open transactions without activity. Without this, a single stuck client can block autovacuum and cause lock pileups indefinitely.",
-      "metadata_json": { "metric_name": "idle_in_transaction_session_timeout_ms", "operator": "=", "threshold": 0 }
+      "metadata_json": {
+        "metric_name": "idle_in_transaction_session_timeout_ms",
+        "operator": "=",
+        "threshold": 0
+      }
     },
     "pg17_synchronous_commit_off": {
-      "title": "synchronous_commit Disabled — Data Loss Risk",
+      "title": "synchronous_commit Disabled \u2014 Data Loss Risk",
       "domain": "Configuration",
       "severity": "warning",
       "condition": "synchronous_commit_safe = 0",
       "threshold": "0",
       "recommendation": "synchronous_commit = off trades durability for throughput. A server crash within ~200ms can lose committed transactions. Set to 'on' for OLTP workloads. If you need the performance, use it only for specific non-critical tables via SET LOCAL.",
-      "metadata_json": { "metric_name": "synchronous_commit_safe", "operator": "=", "threshold": 0 }
+      "metadata_json": {
+        "metric_name": "synchronous_commit_safe",
+        "operator": "=",
+        "threshold": 0
+      }
     },
     "pg17_high_seq_scan_ratio": {
       "title": "High Sequential Scan Ratio (50%+)",
@@ -928,45 +996,88 @@
       "condition": "seq_scan_pct >= 50",
       "threshold": "50",
       "recommendation": "More than half of all table scans are sequential. Review pg_stat_user_tables for large tables with high seq_scan counts. Add indexes for frequent query predicates. Check random_page_cost vs effective_cache_size if plans look wrong.",
-      "metadata_json": { "metric_name": "seq_scan_pct", "operator": ">=", "threshold": 50 }
+      "metadata_json": {
+        "metric_name": "seq_scan_pct",
+        "operator": ">=",
+        "threshold": 50
+      }
     },
-    "cache_hit_ratio_low": {
-      "title": "[Legacy] Cache Hit Ratio Low",
+    "pg17_lock_wait_sessions": {
+      "title": "Lock Wait Sessions Detected",
+      "domain": "Locks",
+      "severity": "warning",
+      "condition": "lock_wait_sessions > 0",
+      "threshold": "0",
+      "recommendation": "Sessions are actively waiting to acquire locks. Use pg17_lock_tree collector to identify the blocker PID and query. Consider terminating long-running blockers with pg_terminate_backend().",
+      "metadata_json": {
+        "metric_name": "lock_wait_sessions",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "pg17_io_wait_sessions_high": {
+      "title": "High I/O Wait \u2014 Sessions Blocked on Disk",
+      "domain": "I/O",
+      "severity": "warning",
+      "condition": "io_wait_sessions > 5",
+      "threshold": "5",
+      "recommendation": "Multiple sessions are waiting on I/O. Check pg17_table_io_hotspots to identify tables with low cache hit ratios. Consider increasing shared_buffers, enable pg_prewarm, or review query access patterns.",
+      "metadata_json": {
+        "metric_name": "io_wait_sessions",
+        "operator": ">",
+        "threshold": 5
+      }
+    },
+    "pg17_slow_query_detected": {
+      "title": "Slow Query Detected (Mean > 1 s)",
+      "domain": "Query Performance",
+      "severity": "warning",
+      "condition": "mean_exec_time_ms > 1000",
+      "threshold": "1000",
+      "recommendation": "At least one query has a mean execution time above 1 second. Review pg17_slow_queries_by_mean. Run EXPLAIN (ANALYZE, BUFFERS) on the offending query. Check for missing indexes, bad plan choices, or parameter sniffing.",
+      "metadata_json": {
+        "metric_name": "mean_exec_time_ms",
+        "operator": ">",
+        "threshold": 1000
+      }
+    },
+    "pg17_slow_query_critical": {
+      "title": "Very Slow Query Detected (Mean > 5 s)",
+      "domain": "Query Performance",
+      "severity": "critical",
+      "condition": "mean_exec_time_ms > 5000",
+      "threshold": "5000",
+      "recommendation": "A query is averaging over 5 seconds per execution. This is a significant performance issue. Immediately review pg17_slow_queries_by_mean. Run EXPLAIN (ANALYZE, BUFFERS), check for sequential scans on large tables, and verify index coverage.",
+      "metadata_json": {
+        "metric_name": "mean_exec_time_ms",
+        "operator": ">",
+        "threshold": 5000
+      }
+    },
+    "pg17_table_cache_miss": {
+      "title": "Table-Level Cache Miss Detected (< 85%)",
+      "domain": "I/O",
+      "severity": "warning",
+      "condition": "min_table_cache_hit_pct < 85",
+      "threshold": "85",
+      "recommendation": "One or more tables have a buffer cache hit rate below 85%, meaning frequent disk reads. Review pg17_table_io_hotspots to identify which tables. Consider increasing shared_buffers, using pg_prewarm, or partitioning large hot tables.",
+      "metadata_json": {
+        "metric_name": "min_table_cache_hit_pct",
+        "operator": "<",
+        "threshold": 85
+      }
+    },
+    "pg17_large_table_no_index": {
+      "title": "Large Table with No Index Usage (Sequential Scans Only)",
       "domain": "Performance",
       "severity": "warning",
-      "condition": "cache_hit_percent < 98",
-      "threshold": "98",
-      "recommendation": "Review shared buffers, query patterns, and index usage for excessive disk reads.",
+      "condition": "large_tables_no_index > 0",
+      "threshold": "0",
+      "recommendation": "One or more tables larger than 100 MB are being accessed almost exclusively via sequential scans. Review pg17_seq_scan_hotspots to identify them. Add appropriate indexes for the predicates used in frequent queries on these tables.",
       "metadata_json": {
-        "metric_name": "cache_hit_percent",
-        "operator": "<",
-        "threshold": 98
-      }
-    },
-    "dead_tuples_high": {
-      "title": "[Legacy] Dead Tuples High",
-      "domain": "Storage & Vacuum",
-      "severity": "warning",
-      "condition": "dead_tuple_percent > 20",
-      "threshold": "20",
-      "recommendation": "Review autovacuum health, long transactions, and tables with high dead tuple percentages.",
-      "metadata_json": {
-        "metric_name": "dead_tuple_percent",
+        "metric_name": "large_tables_no_index",
         "operator": ">",
-        "threshold": 20
-      }
-    },
-    "replication_lag_high": {
-      "title": "[Legacy] Replication Lag High",
-      "domain": "Availability",
-      "severity": "critical",
-      "condition": "max_replication_lag_seconds > 60",
-      "threshold": "60",
-      "recommendation": "Check replica connectivity, WAL shipping, replication slots, and downstream apply delay.",
-      "metadata_json": {
-        "metric_name": "max_replication_lag_seconds",
-        "operator": ">",
-        "threshold": 60
+        "threshold": 0
       }
     }
   },
@@ -1007,5 +1118,94 @@
       "thresholds": [],
       "config_json": {}
     }
-  ]
+  ],
+  "analysis_hints": [
+    {
+      "category": "Performance",
+      "target_type_id": "postgresql",
+      "hints": [
+        "What are the top performance bottlenecks in this database?",
+        "Which queries are consuming the most CPU or I/O resources?",
+        "Are there any missing indexes causing sequential scans on large tables?",
+        "What is the current cache hit ratio and is it acceptable for this workload?",
+        "Are there any long-running or blocking transactions that need attention?",
+        "How does checkpoint frequency and BGwriter activity look? Are we doing too many forced checkpoints?"
+      ]
+    },
+    {
+      "category": "Connections & Locks",
+      "target_type_id": "postgresql",
+      "hints": [
+        "Are we approaching the max_connections limit? What is the risk level?",
+        "Are there any active locks or deadlocks that should be investigated?",
+        "Which sessions are waiting the longest and why?",
+        "Is connection pooling recommended based on current connection patterns?"
+      ]
+    },
+    {
+      "category": "Replication & Availability",
+      "target_type_id": "postgresql",
+      "hints": [
+        "What is the current replication lag and is it within acceptable bounds?",
+        "Are there any replication slots at risk of growing unbounded?",
+        "What is the overall availability and health status of this instance?",
+        "Are standby servers keeping up with the primary's WAL generation rate?"
+      ]
+    },
+    {
+      "category": "Storage & Maintenance",
+      "target_type_id": "postgresql",
+      "hints": [
+        "Are there any tables with significant bloat that need VACUUM or ANALYZE urgently?",
+        "Are autovacuum settings appropriate for the current table sizes and churn rate?",
+        "Which tables or indexes are consuming the most disk space?",
+        "Are there any invalid indexes that should be rebuilt?",
+        "Are partition tables well-balanced, or are some partitions significantly larger than others?"
+      ]
+    },
+    {
+      "category": "Security & Configuration",
+      "target_type_id": "postgresql",
+      "hints": [
+        "Are there any security misconfigurations or privilege escalation risks?",
+        "Which GUC parameters should be reviewed or tuned for this workload?",
+        "Are there any users with excessive or unnecessary privileges?",
+        "Are any pg_hba.conf rules overly permissive?"
+      ]
+    },
+    {
+      "category": "Summary & Recommendations",
+      "target_type_id": "postgresql",
+      "hints": [
+        "Provide an executive summary of the overall database health.",
+        "What are the top 3 most urgent issues to address immediately?",
+        "What recommendations do you have for the next 30 days to improve stability and performance?",
+        "Based on the findings, what is the overall risk level for this database?"
+      ]
+    }
+  ],
+
+  "ui_contributions": {
+    "plugin_label": "PostgreSQL Observability",
+    "nav_pages": ["logs"],
+    "operations_tabs": [],
+    "target_workspace_tabs": [
+      "Control Center",
+      "Enterprise Monitor",
+      "Waits & Sessions",
+      "Locks & Blocking",
+      "Memory Usage",
+      "Query Performance",
+      "Storage & Vacuum",
+      "Index and Table",
+      "Backup & DR",
+      "Security Monitor",
+      "Best Practices",
+      "Custom Collectors",
+      "DB Diagnose",
+      "SQL Workbench",
+      "Alert Events",
+      "Target Readiness"
+    ]
+  }
 }
