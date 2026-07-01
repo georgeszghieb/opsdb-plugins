@@ -1,7 +1,7 @@
 {
   "key": "opsdb.kubernetes",
   "name": "Kubernetes Cluster Monitoring",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "OpsDB Platform",
   "description": "Monitor Kubernetes clusters including pod health, CrashLoopBackOff detection, node resource pressure, and deployment replica availability.",
   "license_feature": "opsdb.kubernetes",

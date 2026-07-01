@@ -17,8 +17,12 @@ def test_connection(params: dict) -> dict:
         t0 = time.perf_counter()
         client = docker.DockerClient(base_url=docker_host or "unix:///var/run/docker.sock")
         client.ping()
+        version = (client.version() or {}).get("Version")
         client.close()
-        return {"success": True, "message": "Docker daemon reachable.", "latency_ms": int((time.perf_counter() - t0) * 1000)}
+        result = {"success": True, "message": "Docker daemon reachable.", "latency_ms": int((time.perf_counter() - t0) * 1000)}
+        if version:
+            result["version"] = str(version)
+        return result
     except Exception as exc:
         return {"success": False, "message": str(exc)}
 

@@ -1,4 +1,4 @@
-"""OpsDB PostgreSQL plugin — collectors.py v1.1.0
+"""OpsDB PostgreSQL plugin — collectors.py v2.1.0
 
 Requires: psycopg (psycopg3) — available in the OpsDB backend container.
 
@@ -11,6 +11,19 @@ import datetime
 import os
 import time
 from decimal import Decimal
+
+
+def _detect_version(conn) -> str | None:
+    """Return 'major.patch' (e.g. '17.4') derived from server_version_num.
+    PG10+ encodes this as major*10000 + patch, so the minor-version slot is always 0.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT current_setting('server_version_num')")
+            num = int(cur.fetchone()[0])
+        return f"{num // 10000}.{num % 100}"
+    except Exception:
+        return None
 
 
 def test_connection(params: dict) -> dict:
@@ -26,8 +39,12 @@ def test_connection(params: dict) -> dict:
             try:
                 t0 = time.perf_counter()
                 conn = psycopg.connect(dsn, connect_timeout=5)
+                version = _detect_version(conn)
                 conn.close()
-                return {"success": True, "message": f"Connected via env var {env_name}", "latency_ms": int((time.perf_counter() - t0) * 1000)}
+                result = {"success": True, "message": f"Connected via env var {env_name}", "latency_ms": int((time.perf_counter() - t0) * 1000)}
+                if version:
+                    result["version"] = version
+                return result
             except Exception as exc:
                 return {"success": False, "message": str(exc)}
 
@@ -50,8 +67,11 @@ def test_connection(params: dict) -> dict:
     try:
         t0 = time.perf_counter()
         conn = psycopg.connect(host=host, port=port, dbname=database, user=user, password=password, connect_timeout=5)
+        version = _detect_version(conn)
         conn.close()
         result = {"success": True, "message": f"Connected to {host}:{port}", "latency_ms": int((time.perf_counter() - t0) * 1000)}
+        if version:
+            result["version"] = version
         if note:
             result["note"] = note
         return result

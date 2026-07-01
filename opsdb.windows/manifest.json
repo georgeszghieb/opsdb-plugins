@@ -1,7 +1,7 @@
 {
   "key": "opsdb.windows",
   "name": "Windows Server Monitoring",
-  "version": "2.0.5",
+  "version": "2.1.0",
   "author": "OpsDB Platform",
   "description": "Monitor Windows Server VMs and physical hosts via WinRM: CPU, memory, disk, network, services, processes, event log, and security events. Provides real-time performance counters, critical service health, event log error tracking, and security audit monitoring.",
   "license_feature": "opsdb.windows",
@@ -17,6 +17,11 @@
         "Enable-PSRemoting -Force",
         "Set-Service WinRM -StartupType Automatic",
         "Start-Service WinRM"
+      ],
+      "failure_hints": [
+        "timed out",
+        "refused",
+        "unreachable"
       ]
     },
     {
@@ -28,6 +33,9 @@
       "condition": "auth_transport == ntlm",
       "fix_commands": [
         "Set-Item WSMan:\\localhost\\Service\\Auth\\Ntlm -Value $true"
+      ],
+      "failure_hints": [
+        "ntlm"
       ]
     },
     {
@@ -42,6 +50,9 @@
         "Set-Item WSMan:\\localhost\\Service\\AllowUnencrypted -Value $true",
         "Restart-Service WinRM",
         "winrm get winrm/config/Service/Auth"
+      ],
+      "failure_hints": [
+        "basic"
       ]
     },
     {
@@ -121,7 +132,11 @@
             "type": "select",
             "required": false,
             "default": "ntlm",
-            "options": ["ntlm", "basic", "kerberos"]
+            "options": [
+              "ntlm",
+              "basic",
+              "kerberos"
+            ]
           },
           {
             "key": "use_ssl",
@@ -129,7 +144,10 @@
             "type": "select",
             "required": false,
             "default": "no",
-            "options": ["no", "yes"]
+            "options": [
+              "no",
+              "yes"
+            ]
           }
         ],
         "monitoring_pages": [
@@ -142,6 +160,7 @@
           "Services",
           "Processes",
           "Event Log",
+          "Log Analysis",
           "Security Monitor",
           "System Info",
           "Best Practices",
@@ -322,7 +341,7 @@
     },
     "win.services_details": {
       "domain": "Availability",
-      "description": "All non-disabled services with their current status and start type. Returns one row per service — use to investigate which services are stopped.",
+      "description": "All non-disabled services with their current status and start type. Returns one row per service \u2014 use to investigate which services are stopped.",
       "default_frequency": "5 minutes",
       "command": "$rows=@(Get-Service -EA SilentlyContinue|?{$_.StartType -ne 'Disabled' -or $_.Status -eq 'Running'}|Sort-Object Status,DisplayName|ForEach-Object{@{name=$_.ServiceName;display_name=$_.DisplayName;status=$_.Status.ToString();start_type=$_.StartType.ToString()}});$rows|ConvertTo-Json -Compress",
       "result_format": "json",
@@ -340,7 +359,7 @@
       "domain": "Event Log",
       "description": "Most recent 50 Error and Critical events from System and Application logs in the past 2 hours. Returns rows with timestamp, source, level, event ID, and message excerpt.",
       "default_frequency": "10 minutes",
-      "command": "$events=@(Get-WinEvent -FilterHashtable @{LogName='System','Application';Level=1,2;StartTime=(Get-Date).AddHours(-2)} -EA SilentlyContinue -MaxEvents 50|ForEach-Object{@{time=$_.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss');log=$_.LogName;source=$_.ProviderName;level=$_.LevelDisplayName;id=[int]$_.Id;message=$_.Message.Substring(0,[math]::Min(200,$_.Message.Length))}});if($events.Count -eq 0){@(@{time='';log='';source='';level='';id=0;message='No errors in the last 2 hours'})}else{$events}|ConvertTo-Json -Compress",
+      "command": "$events=@(Get-WinEvent -FilterHashtable @{LogName='System','Application';Level=1,2;StartTime=(Get-Date).AddHours(-2)} -EA SilentlyContinue -MaxEvents 50|ForEach-Object{@{time=$_.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss');log=$_.LogName;source=$_.ProviderName;level=$_.LevelDisplayName;id=[int]$_.Id;message=([string]$_.Message).Substring(0,[math]::Min(200,([string]$_.Message).Length))}});$output=if($events.Count -eq 0){@(@{time='';log='';source='';level='';id=0;message='No errors in the last 2 hours'})}else{$events};$output|ConvertTo-Json -Compress",
       "result_format": "json",
       "result_mapping": "rows"
     },
@@ -646,7 +665,7 @@
       }
     },
     "win_failed_logons_critical": {
-      "title": "Failed Logon Attempts Critical — Possible Brute-Force",
+      "title": "Failed Logon Attempts Critical \u2014 Possible Brute-Force",
       "domain": "Security",
       "severity": "critical",
       "condition": "failed_logon_count > 100",
@@ -806,7 +825,9 @@
   ],
   "ui_contributions": {
     "plugin_label": "Windows Server Monitoring",
-    "nav_pages": [],
+    "nav_pages": [
+      "logs"
+    ],
     "operations_tabs": [],
     "target_workspace_tabs": [
       "Control Center",
@@ -818,6 +839,7 @@
       "Services",
       "Processes",
       "Event Log",
+      "Log Analysis",
       "Security Monitor",
       "System Info",
       "Best Practices",
@@ -826,5 +848,245 @@
       "Alert Events",
       "Target Readiness"
     ]
+  },
+  "metric_catalog": [
+    {
+      "domain": "CPU & Performance",
+      "metrics": [
+        {
+          "name": "cpu_usage_percent",
+          "label": "CPU Usage",
+          "unit": "%",
+          "hint": "Total CPU utilization across all cores"
+        },
+        {
+          "name": "processor_queue_length",
+          "label": "Processor Queue",
+          "hint": "Threads waiting for CPU; sustained > 2x core count indicates saturation"
+        },
+        {
+          "name": "uptime_seconds",
+          "label": "Uptime",
+          "unit": "s",
+          "hint": "Seconds since last boot. Low value indicates a recent reboot."
+        },
+        {
+          "name": "total_processes",
+          "label": "Total Processes",
+          "hint": "All running processes on the system"
+        },
+        {
+          "name": "total_threads",
+          "label": "Total Threads",
+          "hint": "All threads; rising value may indicate a thread leak"
+        }
+      ]
+    },
+    {
+      "domain": "Memory",
+      "metrics": [
+        {
+          "name": "memory_used_percent",
+          "label": "Memory Used",
+          "unit": "%",
+          "hint": "Physical RAM in use as a percentage"
+        },
+        {
+          "name": "committed_pct",
+          "label": "Commit Charge",
+          "unit": "%",
+          "hint": "Virtual memory committed vs commit limit; > 80% risks out-of-memory"
+        },
+        {
+          "name": "page_faults_per_sec",
+          "label": "Page Faults/s",
+          "hint": "Hard page faults per second; high value indicates memory pressure"
+        },
+        {
+          "name": "memory_free_bytes",
+          "label": "Free Memory",
+          "unit": "B",
+          "hint": "Physical RAM currently free"
+        },
+        {
+          "name": "memory_total_bytes",
+          "label": "Total Memory",
+          "unit": "B",
+          "hint": "Total installed physical RAM"
+        }
+      ]
+    },
+    {
+      "domain": "Storage",
+      "metrics": [
+        {
+          "name": "max_disk_used_pct",
+          "label": "Max Disk Used",
+          "unit": "%",
+          "hint": "Highest used % across all drives"
+        },
+        {
+          "name": "total_disk_bytes",
+          "label": "Total Disk",
+          "unit": "B",
+          "hint": "Combined capacity of all volumes"
+        },
+        {
+          "name": "free_disk_bytes",
+          "label": "Free Disk",
+          "unit": "B",
+          "hint": "Combined free space across all volumes"
+        },
+        {
+          "name": "avg_disk_read_ms",
+          "label": "Avg Disk Read",
+          "unit": "ms",
+          "hint": "Average disk read latency; > 20 ms on HDDs or > 2 ms on SSDs warrants investigation"
+        },
+        {
+          "name": "avg_disk_write_ms",
+          "label": "Avg Disk Write",
+          "unit": "ms",
+          "hint": "Average disk write latency"
+        },
+        {
+          "name": "disk_read_bytes_per_sec",
+          "label": "Disk Read B/s",
+          "unit": "B/s",
+          "hint": "Physical disk read throughput"
+        },
+        {
+          "name": "disk_write_bytes_per_sec",
+          "label": "Disk Write B/s",
+          "unit": "B/s",
+          "hint": "Physical disk write throughput"
+        }
+      ]
+    },
+    {
+      "domain": "Network",
+      "metrics": [
+        {
+          "name": "total_bytes_received_per_sec",
+          "label": "Bytes In/s",
+          "unit": "B/s",
+          "hint": "Total inbound network throughput across all adapters"
+        },
+        {
+          "name": "total_bytes_sent_per_sec",
+          "label": "Bytes Out/s",
+          "unit": "B/s",
+          "hint": "Total outbound network throughput"
+        },
+        {
+          "name": "total_receive_errors",
+          "label": "Receive Errors",
+          "hint": "Cumulative inbound packet errors \u2014 non-zero warrants NIC investigation"
+        },
+        {
+          "name": "total_send_errors",
+          "label": "Send Errors",
+          "hint": "Cumulative outbound packet errors"
+        },
+        {
+          "name": "established_connections",
+          "label": "Established Connections",
+          "hint": "TCP connections in ESTABLISHED state"
+        },
+        {
+          "name": "time_wait_connections",
+          "label": "TIME_WAIT Connections",
+          "hint": "TCP connections in TIME_WAIT; high count may indicate port exhaustion"
+        }
+      ]
+    },
+    {
+      "domain": "Services & Events",
+      "metrics": [
+        {
+          "name": "critical_services_stopped",
+          "label": "Critical Services Stopped",
+          "hint": "Count of critical services not running"
+        },
+        {
+          "name": "stopped_services",
+          "label": "Stopped Services",
+          "hint": "Total services in stopped state"
+        },
+        {
+          "name": "running_services",
+          "label": "Running Services",
+          "hint": "Total services currently running"
+        },
+        {
+          "name": "event_error_count",
+          "label": "Event Errors",
+          "hint": "Error events in System/Application logs in last collection window"
+        },
+        {
+          "name": "critical_event_count",
+          "label": "Critical Events",
+          "hint": "Critical-level events in Windows Event Log"
+        }
+      ]
+    },
+    {
+      "domain": "Security",
+      "metrics": [
+        {
+          "name": "failed_logon_count",
+          "label": "Failed Logons/hr",
+          "hint": "Event 4625 count \u2014 > 20/hr indicates brute-force or misconfigured credentials"
+        },
+        {
+          "name": "account_lockout_count",
+          "label": "Account Lockouts",
+          "hint": "Event 4740 count"
+        },
+        {
+          "name": "admin_group_members",
+          "label": "Admin Group Members",
+          "hint": "Local Administrators group member count; > 5 is flagged as risk"
+        },
+        {
+          "name": "explicit_credential_logons",
+          "label": "Explicit Credential Logons",
+          "hint": "Event 4648 \u2014 may indicate pass-the-hash or credential reuse"
+        },
+        {
+          "name": "enabled_users",
+          "label": "Enabled Local Users",
+          "hint": "Count of enabled local user accounts"
+        },
+        {
+          "name": "total_local_users",
+          "label": "Total Local Users",
+          "hint": "All local user accounts including disabled"
+        }
+      ]
+    },
+    {
+      "domain": "Patch & Hygiene",
+      "metrics": [
+        {
+          "name": "pending_reboot",
+          "label": "Pending Reboot",
+          "hint": "1 = reboot required to apply patches; 0 = clean"
+        },
+        {
+          "name": "last_patch_days_ago",
+          "label": "Days Since Last Patch",
+          "hint": "Days since last Windows Update installation; > 60 warrants investigation"
+        },
+        {
+          "name": "installed_patches",
+          "label": "Installed Patches",
+          "hint": "Total cumulative patches installed"
+        }
+      ]
+    }
+  ],
+  "config_templates": {
+    "command": "$result = [PSCustomObject]@{\n    value          = 42\n    hostname       = $env:COMPUTERNAME\n    collected_at   = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')\n}\nConvertTo-Json $result -Compress"
   }
 }

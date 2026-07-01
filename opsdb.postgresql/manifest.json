@@ -1,11 +1,104 @@
 {
   "key": "opsdb.postgresql",
   "name": "PostgreSQL Observability",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "OpsDB Platform",
   "description": "Monitor PostgreSQL 17 databases: availability, sessions, blocking, replication, WAL, vacuum, indexes, security, query performance, EXPLAIN plan analysis, alert event tracking, and metric drill-down panels.",
   "license_feature": "opsdb.postgresql",
   "icon": "icon.svg",
+  "setup_requirements": [
+    {
+      "id": "port_reachable",
+      "title": "PostgreSQL Port Reachable",
+      "description": "The OpsDB backend must be able to reach the target host on the configured port (default 5432) over TCP. Check firewalls and security groups between the backend and the database host.",
+      "category": "network",
+      "level": "required",
+      "fix_commands": [
+        "sudo ufw allow 5432/tcp",
+        "-- also confirm any cloud security group / NSG allows inbound TCP 5432 from the OpsDB backend's IP"
+      ],
+      "failure_hints": ["connection refused", "timed out", "could not connect", "network is unreachable", "no route to host"]
+    },
+    {
+      "id": "listen_addresses",
+      "title": "listen_addresses Allows Remote Connections",
+      "description": "postgresql.conf's listen_addresses must include the backend's network interface (not just 'localhost') or the server won't accept remote connections at all.",
+      "category": "configuration",
+      "level": "required",
+      "fix_commands": [
+        "ALTER SYSTEM SET listen_addresses = '*';",
+        "-- then restart PostgreSQL for the change to take effect"
+      ]
+    },
+    {
+      "id": "pg_hba_conf",
+      "title": "pg_hba.conf Allows This Host, User, and Database",
+      "description": "pg_hba.conf needs a matching entry for the connecting host's IP range, database, and username with an accepted auth method — otherwise PostgreSQL rejects the connection before it even checks the password.",
+      "category": "authentication",
+      "level": "required",
+      "fix_commands": [
+        "-- Add a line to pg_hba.conf (adjust IP range, db, and user):",
+        "host  <database>  <user>  <backend_ip>/32  scram-sha-256",
+        "SELECT pg_reload_conf();"
+      ],
+      "failure_hints": ["no pg_hba.conf entry"]
+    },
+    {
+      "id": "credentials",
+      "title": "Valid Username & Password",
+      "description": "The username and password stored as a Credential in OpsDB must be valid for this database and role.",
+      "category": "authentication",
+      "level": "required",
+      "fix_commands": [],
+      "failure_hints": ["password authentication failed"]
+    },
+    {
+      "id": "ssl_required",
+      "title": "SSL Enabled on Server",
+      "description": "Only needed when SSL Mode is set to 'require' below. The server must have ssl = on in postgresql.conf with a valid certificate, or the connection will be rejected.",
+      "category": "authentication",
+      "level": "conditional",
+      "condition": "ssl_mode == require",
+      "fix_commands": [
+        "ALTER SYSTEM SET ssl = 'on';",
+        "-- then restart PostgreSQL"
+      ],
+      "failure_hints": ["ssl"]
+    },
+    {
+      "id": "track_io_timing",
+      "title": "track_io_timing Enabled",
+      "description": "Optional, but without it the I/O Stats collector (pg_stat_io) still runs and reports read/write counts — it just can't report read/write timing in ms, so I/O latency findings lose their signal.",
+      "category": "configuration",
+      "level": "recommended",
+      "fix_commands": [
+        "ALTER SYSTEM SET track_io_timing = on;",
+        "SELECT pg_reload_conf();"
+      ]
+    },
+    {
+      "id": "pg_stat_statements",
+      "title": "pg_stat_statements Extension",
+      "description": "Optional, but the Query Performance collectors (Top Queries, Slow Queries, Temp Spills) need it. Without it, those collectors return a friendly 'extension is not installed' message instead of data — everything else still works.",
+      "category": "configuration",
+      "level": "recommended",
+      "fix_commands": [
+        "ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements';",
+        "-- restart PostgreSQL, then:",
+        "CREATE EXTENSION pg_stat_statements;"
+      ]
+    },
+    {
+      "id": "pg_monitor_role",
+      "title": "pg_monitor Role Granted",
+      "description": "Optional, but if the connecting user isn't a superuser, granting the built-in pg_monitor role lets it see all sessions, statements, and I/O stats instance-wide instead of just its own — otherwise several Activity/Performance collectors under-report.",
+      "category": "authentication",
+      "level": "recommended",
+      "fix_commands": [
+        "GRANT pg_monitor TO <user>;"
+      ]
+    }
+  ],
   "target_types": [
     {
       "id": "postgresql",
@@ -81,6 +174,7 @@
           "Security Monitor",
           "Best Practices",
           "Custom Collectors",
+          "Log Analysis",
           "DB Diagnose",
           "SQL Workbench",
           "Alert Events",
@@ -236,8 +330,9 @@
     },
     "pg17_io_stats": {
       "domain": "I/O",
-      "description": "Aggregated I/O read/write counts, timing in ms, evictions, and buffer hits across all I/O backends (requires track_io_timing = on).",
+      "description": "Aggregated I/O read/write counts, timing in ms, evictions, and buffer hits across all I/O backends (requires track_io_timing = on). Uses pg_stat_io (PostgreSQL 16+).",
       "default_frequency": "5 minutes",
+      "min_version": "16",
       "query": "SELECT COALESCE(SUM(reads), 0) AS total_reads, COALESCE(SUM(writes), 0) AS total_writes, COALESCE(SUM(read_time), 0) AS total_read_time_ms, COALESCE(SUM(write_time), 0) AS total_write_time_ms, COALESCE(SUM(evictions), 0) AS total_evictions, COALESCE(SUM(hits), 0) AS total_hits FROM pg_stat_io",
       "units": {
         "total_read_time_ms": "ms",
@@ -257,6 +352,7 @@
       "domain": "Checkpoints",
       "description": "Checkpoint counts (timed vs requested), write/sync timing, buffer stats, and percentage of demand-triggered checkpoints. Uses pg_stat_checkpointer + pg_stat_bgwriter (PostgreSQL 17+).",
       "default_frequency": "5 minutes",
+      "min_version": "17",
       "query": "SELECT c.num_timed AS checkpoints_timed, c.num_requested AS checkpoints_requested, c.write_time AS checkpoint_write_time_ms, c.sync_time AS checkpoint_sync_time_ms, c.buffers_written AS buffers_checkpoint, b.buffers_clean, b.maxwritten_clean, b.buffers_alloc, round(c.num_requested::numeric / NULLIF(c.num_timed + c.num_requested, 0) * 100, 2) AS requested_checkpoint_pct FROM pg_stat_checkpointer c, pg_stat_bgwriter b",
       "units": {
         "checkpoint_write_time_ms": "ms",
@@ -446,7 +542,7 @@
     },
     "pg17_xid_wraparound": {
       "domain": "Availability",
-      "description": "XID age per database \u2014 exceeding 2.1 billion causes PostgreSQL to forcibly shut down to prevent wraparound data corruption. This is the #1 cause of unplanned PG outages.",
+      "description": "XID age per database — exceeding 2.1 billion causes PostgreSQL to forcibly shut down to prevent wraparound data corruption. This is the #1 cause of unplanned PG outages.",
       "default_frequency": "1 hour",
       "query": "SELECT max(age(datfrozenxid)) AS max_xid_age, count(*) FILTER (WHERE age(datfrozenxid) > 1500000000) AS databases_near_wraparound, count(*) FILTER (WHERE age(datfrozenxid) > 200000000) AS databases_needing_freeze, COALESCE(min(2147483647 - age(datfrozenxid)), 0) AS min_xids_until_wraparound FROM pg_database WHERE datallowconn"
     },
@@ -471,7 +567,7 @@
       "domain": "Activity",
       "description": "Snapshot of all non-idle sessions: PID, user, application, state, wait event, query age, transaction age, and truncated query text. Use this to see exactly what is running and waiting right now.",
       "default_frequency": "1 minute",
-      "query": "SELECT pid,       usename,       application_name,       client_addr::text AS client_addr,       state,       COALESCE(wait_event_type,'\u2014') AS wait_event_type,       COALESCE(wait_event,'\u2014') AS wait_event,       round(EXTRACT(EPOCH FROM (now() - query_start))::numeric, 1) AS query_age_seconds,       round(EXTRACT(EPOCH FROM (now() - xact_start))::numeric, 1) AS xact_age_seconds,       left(query, 300) AS query_text FROM pg_stat_activity WHERE state NOT IN ('idle') AND pid <> pg_backend_pid() ORDER BY query_age_seconds DESC NULLS LAST LIMIT 30",
+      "query": "SELECT pid,       usename,       application_name,       client_addr::text AS client_addr,       state,       COALESCE(wait_event_type,'—') AS wait_event_type,       COALESCE(wait_event,'—') AS wait_event,       round(EXTRACT(EPOCH FROM (now() - query_start))::numeric, 1) AS query_age_seconds,       round(EXTRACT(EPOCH FROM (now() - xact_start))::numeric, 1) AS xact_age_seconds,       left(query, 300) AS query_text FROM pg_stat_activity WHERE state NOT IN ('idle') AND pid <> pg_backend_pid() ORDER BY query_age_seconds DESC NULLS LAST LIMIT 30",
       "units": {
         "query_age_seconds": "seconds",
         "xact_age_seconds": "seconds"
@@ -498,7 +594,7 @@
     },
     "pg17_seq_scan_hotspots": {
       "domain": "Performance",
-      "description": "Per-table sequential scan counts and sizes. First row includes count of large tables (>100 MB) with >80% seq scan ratio \u2014 prime candidates for missing indexes. Use this to identify which tables need indexes added.",
+      "description": "Per-table sequential scan counts and sizes. First row includes count of large tables (>100 MB) with >80% seq scan ratio — prime candidates for missing indexes. Use this to identify which tables need indexes added.",
       "default_frequency": "15 minutes",
       "query": "WITH scans AS (  SELECT schemaname, relname,         seq_scan, COALESCE(idx_scan, 0) AS idx_scan,         seq_tup_read, n_live_tup,         pg_total_relation_size(quote_ident(schemaname)||'.'||quote_ident(relname)) AS table_bytes,         round(seq_scan::numeric / NULLIF(seq_scan + COALESCE(idx_scan,0), 0) * 100, 1) AS table_seq_scan_pct  FROM pg_stat_user_tables  WHERE seq_scan > 50),summary AS (  SELECT count(*) FILTER (WHERE table_seq_scan_pct > 80 AND table_bytes > 104857600) AS large_tables_no_index,         max(seq_scan) AS max_seq_scan_count  FROM scans) SELECT s.schemaname, s.relname, s.seq_scan, s.idx_scan,        s.n_live_tup, s.table_seq_scan_pct,        pg_size_pretty(s.table_bytes) AS table_size,        sm.large_tables_no_index, sm.max_seq_scan_count FROM scans s, summary sm ORDER BY s.seq_scan DESC LIMIT 30",
       "units": {}
@@ -519,7 +615,7 @@
       "domain": "Logs",
       "description": "Recent non-idle backend activity including errors, slow queries and problematic states from pg_stat_activity. Acts as a lightweight activity log when PostgreSQL file-based logging is unavailable.",
       "default_frequency": "5 minutes",
-      "query": "SELECT pid,       usename,       application_name,       client_addr::text AS client_addr,       backend_type,       state,       COALESCE(wait_event_type,'\u2014') AS wait_event_type,       COALESCE(wait_event,'\u2014') AS wait_event,       round(EXTRACT(EPOCH FROM (now() - query_start))::numeric, 1) AS query_age_seconds,       round(EXTRACT(EPOCH FROM (now() - state_change))::numeric, 1) AS state_age_seconds,       left(query, 400) AS query_text FROM pg_stat_activity WHERE pid <> pg_backend_pid()   AND (state NOT IN ('idle') OR wait_event_type IS NOT NULL) ORDER BY query_age_seconds DESC NULLS LAST LIMIT 100",
+      "query": "SELECT pid,       usename,       application_name,       client_addr::text AS client_addr,       backend_type,       state,       COALESCE(wait_event_type,'—') AS wait_event_type,       COALESCE(wait_event,'—') AS wait_event,       round(EXTRACT(EPOCH FROM (now() - query_start))::numeric, 1) AS query_age_seconds,       round(EXTRACT(EPOCH FROM (now() - state_change))::numeric, 1) AS state_age_seconds,       left(query, 400) AS query_text FROM pg_stat_activity WHERE pid <> pg_backend_pid()   AND (state NOT IN ('idle') OR wait_event_type IS NOT NULL) ORDER BY query_age_seconds DESC NULLS LAST LIMIT 100",
       "units": {
         "query_age_seconds": "seconds",
         "state_age_seconds": "seconds"
@@ -925,7 +1021,7 @@
       }
     },
     "pg17_xid_wraparound_warning": {
-      "title": "XID Wraparound Risk \u2014 Age Exceeds 1.5 Billion",
+      "title": "XID Wraparound Risk — Age Exceeds 1.5 Billion",
       "domain": "Availability",
       "severity": "warning",
       "condition": "max_xid_age >= 1500000000",
@@ -938,7 +1034,7 @@
       }
     },
     "pg17_xid_wraparound_critical": {
-      "title": "XID Wraparound Imminent \u2014 Age Exceeds 2 Billion",
+      "title": "XID Wraparound Imminent — Age Exceeds 2 Billion",
       "domain": "Availability",
       "severity": "critical",
       "condition": "max_xid_age >= 2000000000",
@@ -977,7 +1073,7 @@
       }
     },
     "pg17_synchronous_commit_off": {
-      "title": "synchronous_commit Disabled \u2014 Data Loss Risk",
+      "title": "synchronous_commit Disabled — Data Loss Risk",
       "domain": "Configuration",
       "severity": "warning",
       "condition": "synchronous_commit_safe = 0",
@@ -1016,7 +1112,7 @@
       }
     },
     "pg17_io_wait_sessions_high": {
-      "title": "High I/O Wait \u2014 Sessions Blocked on Disk",
+      "title": "High I/O Wait — Sessions Blocked on Disk",
       "domain": "I/O",
       "severity": "warning",
       "condition": "io_wait_sessions > 5",
@@ -1184,10 +1280,11 @@
       ]
     }
   ],
-
   "ui_contributions": {
     "plugin_label": "PostgreSQL Observability",
-    "nav_pages": ["logs"],
+    "nav_pages": [
+      "logs"
+    ],
     "operations_tabs": [],
     "target_workspace_tabs": [
       "Control Center",
@@ -1202,10 +1299,366 @@
       "Security Monitor",
       "Best Practices",
       "Custom Collectors",
+      "Log Analysis",
       "DB Diagnose",
       "SQL Workbench",
       "Alert Events",
       "Target Readiness"
     ]
+  },
+  "metric_catalog": [
+    {
+      "domain": "Sessions & Connections",
+      "metrics": [
+        {
+          "name": "active_sessions",
+          "label": "Active Sessions",
+          "hint": "Queries currently executing"
+        },
+        {
+          "name": "waiting_sessions",
+          "label": "Waiting Sessions",
+          "hint": "Sessions waiting on locks or I/O"
+        },
+        {
+          "name": "idle_in_transaction_sessions",
+          "label": "Idle-in-Transaction",
+          "hint": "Sessions holding open transactions without executing"
+        },
+        {
+          "name": "blocked_sessions",
+          "label": "Blocked Sessions",
+          "hint": "Sessions blocked by another session holding a lock"
+        },
+        {
+          "name": "long_active_count",
+          "label": "Long-Running Queries",
+          "hint": "Active queries running longer than 60 s"
+        },
+        {
+          "name": "total_sessions",
+          "label": "Total Connections",
+          "hint": "All connected clients including background workers"
+        },
+        {
+          "name": "connection_usage_pct",
+          "label": "Connection Usage %",
+          "unit": "%",
+          "hint": "Connections used vs max_connections"
+        }
+      ]
+    },
+    {
+      "domain": "Performance & Cache",
+      "metrics": [
+        {
+          "name": "cache_hit_pct",
+          "label": "Cache Hit Ratio",
+          "unit": "%",
+          "hint": "Buffer cache hits / (hits + disk reads). Below 95% is a concern."
+        },
+        {
+          "name": "temp_files",
+          "label": "Temp Files",
+          "hint": "Temp files created due to sort/hash spills to disk"
+        },
+        {
+          "name": "temp_bytes",
+          "label": "Temp File Bytes",
+          "unit": "B",
+          "hint": "Total bytes written to temp files"
+        },
+        {
+          "name": "seq_scan_pct",
+          "label": "Seq Scan %",
+          "unit": "%",
+          "hint": "Sequential scans as % of all scans; high value = missing indexes"
+        },
+        {
+          "name": "total_seq_scans",
+          "label": "Total Seq Scans",
+          "hint": "Cumulative sequential scans across all user tables"
+        },
+        {
+          "name": "total_idx_scans",
+          "label": "Total Index Scans",
+          "hint": "Cumulative index scans across all user tables"
+        },
+        {
+          "name": "hot_update_pct",
+          "label": "HOT Update %",
+          "unit": "%",
+          "hint": "HOT updates as % of total updates; higher = less index bloat"
+        }
+      ]
+    },
+    {
+      "domain": "Transactions & Locks",
+      "metrics": [
+        {
+          "name": "deadlocks",
+          "label": "Deadlocks",
+          "hint": "Cumulative deadlock count (resets on stats reset)"
+        },
+        {
+          "name": "total_inserts",
+          "label": "Total Inserts",
+          "hint": "Cumulative rows inserted across all user tables"
+        },
+        {
+          "name": "total_updates",
+          "label": "Total Updates",
+          "hint": "Cumulative rows updated"
+        },
+        {
+          "name": "total_deletes",
+          "label": "Total Deletes",
+          "hint": "Cumulative rows deleted"
+        },
+        {
+          "name": "prepared_transaction_count",
+          "label": "Prepared Transactions",
+          "hint": "Transactions in PREPARED state (2PC); unresolved ones block vacuum"
+        },
+        {
+          "name": "blocking_count",
+          "label": "Blocking Count",
+          "hint": "Count of blocked backend processes"
+        },
+        {
+          "name": "max_blocked_duration_seconds",
+          "label": "Max Blocked Duration",
+          "unit": "s",
+          "hint": "Age of the longest-blocked session in seconds"
+        },
+        {
+          "name": "lock_wait_sessions",
+          "label": "Lock Wait Sessions",
+          "hint": "Sessions actively waiting to acquire a lock"
+        }
+      ]
+    },
+    {
+      "domain": "Vacuum & Bloat",
+      "metrics": [
+        {
+          "name": "tables_with_dead_tuples",
+          "label": "Tables With Dead Tuples",
+          "hint": "User tables that have any dead (unvacuumed) tuples"
+        },
+        {
+          "name": "tables_high_dead_pct",
+          "label": "Tables High Dead %",
+          "hint": "Tables with dead tuple ratio >= 20%"
+        },
+        {
+          "name": "max_dead_tuple_pct",
+          "label": "Max Dead Tuple %",
+          "unit": "%",
+          "hint": "Highest dead tuple percentage across all user tables"
+        },
+        {
+          "name": "total_dead_tuples",
+          "label": "Total Dead Tuples",
+          "hint": "Total dead tuples across all user tables"
+        },
+        {
+          "name": "active_vacuum_count",
+          "label": "Active VACUUM Workers",
+          "hint": "VACUUM operations currently running"
+        },
+        {
+          "name": "active_autovacuum_count",
+          "label": "Autovacuum Workers",
+          "hint": "Active autovacuum worker processes right now"
+        }
+      ]
+    },
+    {
+      "domain": "XID Wraparound",
+      "metrics": [
+        {
+          "name": "max_xid_age",
+          "label": "Max XID Age",
+          "hint": "Oldest transaction ID age; approaching 2.1B causes emergency shutdown"
+        },
+        {
+          "name": "databases_near_wraparound",
+          "label": "DBs Near Wraparound",
+          "hint": "Databases with XID age > 1.5B — needs immediate freeze"
+        },
+        {
+          "name": "databases_needing_freeze",
+          "label": "DBs Needing Freeze",
+          "hint": "Databases with XID age > 200M — should run VACUUM FREEZE soon"
+        },
+        {
+          "name": "min_xids_until_wraparound",
+          "label": "XIDs Until Wraparound",
+          "hint": "Minimum transactions remaining before wraparound shutdown"
+        }
+      ]
+    },
+    {
+      "domain": "WAL & Replication",
+      "metrics": [
+        {
+          "name": "max_replay_lag_seconds",
+          "label": "Replication Lag",
+          "unit": "s",
+          "hint": "Physical standby replay lag in seconds"
+        },
+        {
+          "name": "max_replay_lag_bytes",
+          "label": "Replay Lag Bytes",
+          "unit": "B",
+          "hint": "Physical standby replay lag in bytes"
+        },
+        {
+          "name": "wal_bytes",
+          "label": "WAL Bytes Generated",
+          "hint": "WAL bytes generated (cumulative, from pg_stat_wal)"
+        },
+        {
+          "name": "max_retained_wal_bytes",
+          "label": "Max Retained WAL",
+          "unit": "B",
+          "hint": "WAL bytes retained by the laggiest replication slot"
+        },
+        {
+          "name": "inactive_slots",
+          "label": "Inactive Rep Slots",
+          "hint": "Replication slots with no active consumer — they prevent WAL cleanup"
+        },
+        {
+          "name": "replication_standby_count",
+          "label": "Standby Count",
+          "hint": "Connected streaming standbys"
+        },
+        {
+          "name": "requested_checkpoint_pct",
+          "label": "Requested Checkpoint %",
+          "unit": "%",
+          "hint": "% of checkpoints that were demand-triggered (not scheduled)"
+        }
+      ]
+    },
+    {
+      "domain": "Storage & Indexes",
+      "metrics": [
+        {
+          "name": "current_database_size_bytes",
+          "label": "Database Size",
+          "unit": "B",
+          "hint": "Total size of the monitored database"
+        },
+        {
+          "name": "total_size_bytes",
+          "label": "Total Table Size",
+          "unit": "B",
+          "hint": "Combined size of all user tables including indexes"
+        },
+        {
+          "name": "largest_table_bytes",
+          "label": "Largest Table",
+          "unit": "B",
+          "hint": "Size of the single largest table"
+        },
+        {
+          "name": "unused_indexes",
+          "label": "Unused Indexes",
+          "hint": "Indexes with zero scans since last stats reset"
+        },
+        {
+          "name": "unused_index_size_bytes",
+          "label": "Unused Index Size",
+          "unit": "B",
+          "hint": "Total disk space consumed by unused indexes"
+        },
+        {
+          "name": "invalid_index_count",
+          "label": "Invalid Indexes",
+          "hint": "Invalid or not-ready indexes — rebuild with REINDEX CONCURRENTLY"
+        }
+      ]
+    },
+    {
+      "domain": "Query Performance",
+      "metrics": [
+        {
+          "name": "mean_exec_time_ms",
+          "label": "Max Mean Exec Time",
+          "unit": "ms",
+          "hint": "Highest mean execution time among all queries in pg_stat_statements"
+        },
+        {
+          "name": "queries_with_temp_spill",
+          "label": "Queries With Temp Spill",
+          "hint": "Queries that wrote to disk during sort/hash operations"
+        },
+        {
+          "name": "max_temp_spill_mb",
+          "label": "Max Temp Spill",
+          "unit": "MB",
+          "hint": "Largest single-query temp spill in MB"
+        }
+      ]
+    },
+    {
+      "domain": "Configuration",
+      "metrics": [
+        {
+          "name": "settings_pending_restart",
+          "label": "Pending Restart",
+          "hint": "GUC settings changed that require a server restart"
+        },
+        {
+          "name": "ssl_enabled",
+          "label": "SSL Enabled",
+          "hint": "1 = on, 0 = off. Trigger at == 0 to alert when SSL is disabled."
+        },
+        {
+          "name": "synchronous_commit_safe",
+          "label": "Synchronous Commit Safe",
+          "hint": "1 = on/remote_apply/remote_write, 0 = off. Trigger at == 0 to alert."
+        },
+        {
+          "name": "idle_in_transaction_session_timeout_ms",
+          "label": "Idle-in-Txn Timeout",
+          "unit": "ms",
+          "hint": "0 = disabled. Trigger at == 0 to alert when unset."
+        },
+        {
+          "name": "statement_timeout_ms",
+          "label": "Statement Timeout",
+          "unit": "ms",
+          "hint": "0 = disabled. Trigger at == 0 to alert when unset."
+        },
+        {
+          "name": "shared_preload_has_pss",
+          "label": "pg_stat_statements Loaded",
+          "hint": "1 = loaded, 0 = not. Trigger at == 0 to alert."
+        }
+      ]
+    },
+    {
+      "domain": "Availability",
+      "metrics": [
+        {
+          "name": "uptime_seconds",
+          "label": "Server Uptime",
+          "unit": "s",
+          "hint": "Seconds since PostgreSQL started. Low value may indicate a recent restart."
+        },
+        {
+          "name": "is_standby",
+          "label": "Is Standby",
+          "hint": "1 = standby (replica), 0 = primary"
+        }
+      ]
+    }
+  ],
+  "config_templates": {
+    "query": "SELECT\n  datname        AS database,\n  numbackends    AS connections,\n  xact_commit    AS commits,\n  xact_rollback  AS rollbacks,\n  blks_hit,\n  blks_read,\n  tup_returned,\n  tup_fetched\nFROM pg_stat_database\nWHERE datname NOT IN ('template0', 'template1')\nORDER BY numbackends DESC"
   }
 }

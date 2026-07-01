@@ -1,11 +1,91 @@
 {
   "key": "opsdb.linux",
-  "name": "Linux Infrastructure Monitoring",
-  "version": "1.0.0",
+  "name": "Linux Server Monitoring",
+  "version": "2.1.1",
   "author": "OpsDB Platform",
-  "description": "Monitor Linux servers via SSH including CPU usage, memory utilisation, disk I/O, network throughput, and filesystem capacity.",
+  "description": "Monitor Linux servers (Ubuntu 20.04+ / systemd) via SSH: CPU, memory, disk I/O, network, systemd services, processes, journald logs, and security events. Collects from /proc, ss, ps, df, and journalctl. Provides real-time performance metrics, service health, event log error tracking, and security audit monitoring.",
   "license_feature": "opsdb.linux",
   "icon": "icon.svg",
+  "setup_requirements": [
+    {
+      "id": "sshd_running",
+      "title": "SSH Daemon Running",
+      "description": "OpenSSH server (sshd) must be installed and running. OpsDB connects via SSH to execute monitoring commands.",
+      "category": "connectivity",
+      "level": "required",
+      "fix_commands": [
+        "sudo apt-get install -y openssh-server",
+        "sudo systemctl enable --now ssh"
+      ],
+      "failure_hints": ["connection refused", "timed out", "unreachable", "no route to host"]
+    },
+    {
+      "id": "firewall_port_22",
+      "title": "Firewall Port 22 Open (SSH)",
+      "description": "The OpsDB backend must be able to reach TCP port 22 (or your configured SSH port) on the target server.",
+      "category": "network",
+      "level": "required",
+      "fix_commands": [
+        "sudo ufw allow 22/tcp",
+        "sudo ufw reload"
+      ]
+    },
+    {
+      "id": "ssh_credentials",
+      "title": "Valid SSH Username & Password/Key",
+      "description": "The username and password (or private key) stored as a Credential in OpsDB must be valid for this host. For key auth, the public key must be in ~/.ssh/authorized_keys for that user.",
+      "category": "authentication",
+      "level": "required",
+      "fix_commands": [],
+      "failure_hints": ["authentication", "no acceptable"]
+    },
+    {
+      "id": "python3_available",
+      "title": "Python 3.6 or Later Installed",
+      "description": "All collectors run as Python 3 one-liners over SSH. Python 3.6+ is required.",
+      "category": "runtime",
+      "level": "required",
+      "fix_commands": [
+        "sudo apt-get install -y python3"
+      ]
+    },
+    {
+      "id": "proc_filesystem",
+      "title": "/proc and /sys Filesystems Mounted",
+      "description": "CPU, memory, disk I/O, and network collectors read from /proc and /proc/net/dev. These virtual filesystems are always present on any running Linux kernel.",
+      "category": "runtime",
+      "level": "required",
+      "fix_commands": []
+    },
+    {
+      "id": "systemd_available",
+      "title": "systemd (for Service Monitoring)",
+      "description": "The linux.services_health and linux.services_details collectors require systemctl. Ubuntu 16.04+ uses systemd by default. Without it, those two collectors return zeros instead of failing.",
+      "category": "runtime",
+      "level": "recommended",
+      "fix_commands": []
+    },
+    {
+      "id": "journald_access",
+      "title": "journalctl Access (for Log Collectors)",
+      "description": "The linux.syslog_errors, linux.journal_errors, and linux.failed_logins collectors use journalctl. The SSH user must be in the systemd-journal group or have sudo access.",
+      "category": "authentication",
+      "level": "recommended",
+      "fix_commands": [
+        "sudo usermod -aG systemd-journal <username>"
+      ]
+    },
+    {
+      "id": "ss_command",
+      "title": "ss (Socket Statistics) Command",
+      "description": "Network and TCP connection collectors use ss from the iproute2 package.",
+      "category": "runtime",
+      "level": "recommended",
+      "fix_commands": [
+        "sudo apt-get install -y iproute2"
+      ]
+    }
+  ],
   "target_types": [
     {
       "id": "linux_server",
@@ -18,7 +98,8 @@
             "key": "host",
             "label": "Host / IP",
             "type": "text",
-            "required": true
+            "required": true,
+            "placeholder": "192.168.1.10"
           },
           {
             "key": "port",
@@ -32,42 +113,90 @@
             "label": "Username",
             "type": "text",
             "required": true,
-            "default": "root"
+            "default": "ubuntu"
           },
           {
             "key": "credential_ref",
             "label": "Password / Key Credential",
             "type": "credential",
             "required": true
+          },
+          {
+            "key": "auth_type",
+            "label": "Auth Method",
+            "type": "select",
+            "required": false,
+            "default": "password",
+            "options": [
+              "password",
+              "key"
+            ]
           }
         ],
         "monitoring_pages": [
           "Control Center",
-          "CPU",
+          "CPU & Performance",
           "Memory",
-          "Disk / Filesystems",
-          "Services",
+          "Storage",
+          "Disk I/O",
           "Network",
-          "Logs / Events",
-          "Security",
-          "Capacity",
-          "Alerts & Events",
-          "Findings Analysis",
-          "Runtime Collectors",
-          "Collector Frequencies",
-          "Log Diagnose",
-          "Report",
-          "Dashboard Info"
+          "Services",
+          "Processes",
+          "System Logs",
+          "Log Analysis",
+          "Security Monitor",
+          "System Info",
+          "Best Practices",
+          "Custom Collectors",
+          "Host Diagnose",
+          "Alert Events",
+          "Target Readiness"
         ],
         "collectors": [
-          "linux.cpu_memory",
+          "linux.system_uptime",
+          "linux.cpu_utilization",
+          "linux.memory_utilization",
+          "linux.disk_utilization",
+          "linux.disk_details",
           "linux.disk_io",
-          "linux.network"
+          "linux.network_io",
+          "linux.network_interfaces",
+          "linux.tcp_connections",
+          "linux.services_health",
+          "linux.services_details",
+          "linux.process_top_cpu",
+          "linux.process_top_memory",
+          "linux.performance_overview",
+          "linux.syslog_errors",
+          "linux.journal_errors",
+          "linux.failed_logins",
+          "linux.local_users",
+          "linux.open_ports",
+          "linux.system_info"
         ],
         "findings": [
-          "linux_cpu_usage_high",
-          "linux_disk_usage_high",
-          "linux_memory_pressure_high"
+          "linux_cpu_usage_warning",
+          "linux_cpu_usage_critical",
+          "linux_load_avg_warning",
+          "linux_load_avg_critical",
+          "linux_memory_usage_warning",
+          "linux_memory_usage_critical",
+          "linux_swap_usage_warning",
+          "linux_swap_usage_critical",
+          "linux_disk_space_warning",
+          "linux_disk_space_critical",
+          "linux_network_receive_errors_warning",
+          "linux_network_receive_errors_critical",
+          "linux_services_failed",
+          "linux_services_many_failed",
+          "linux_zombie_processes_high",
+          "linux_syslog_errors_warning",
+          "linux_syslog_errors_critical",
+          "linux_critical_events_detected",
+          "linux_failed_logins_warning",
+          "linux_failed_logins_critical",
+          "linux_sudo_users_high",
+          "linux_listening_ports_high"
         ],
         "workflow_nodes": [
           "run_linux_collector",
@@ -83,83 +212,868 @@
     }
   ],
   "collector_meta": {
-    "linux.cpu_memory": {
-      "domain": "Compute",
-      "description": "CPU usage percent and memory utilisation from /proc/stat and /proc/meminfo.",
-      "default_frequency": "5 minutes",
-      "command": "python3 -c \"import json;s=open('/proc/stat').readline().split();idle,total=int(s[4]),sum(int(x) for x in s[1:]);m={l.split(':')[0]:int(l.split()[1])*1024 for l in open('/proc/meminfo') if ':' in l};avail=m.get('MemAvailable',m.get('MemFree',0));print(json.dumps({'cpu_usage_percent':round((1-idle/total)*100,1),'memory_used_percent':round((m['MemTotal']-avail)/m['MemTotal']*100,1),'memory_total_bytes':m['MemTotal'],'memory_available_bytes':avail}))\"",
+    "linux.system_uptime": {
+      "domain": "Availability",
+      "description": "Server uptime in seconds, 1/5/15-minute load averages, and running/total process counts from /proc/uptime and /proc/loadavg. Run every minute to detect unexpected reboots.",
+      "default_frequency": "1 minute",
+      "command": "python3 -c \"import json;up=float(open('/proc/uptime').read().split()[0]);la=open('/proc/loadavg').read().split();print(json.dumps({'uptime_seconds':round(up),'load_avg_1':float(la[0]),'load_avg_5':float(la[1]),'load_avg_15':float(la[2]),'running_processes':int(la[3].split('/')[0]),'total_processes':int(la[3].split('/')[1])}))\"",
       "result_format": "json",
       "result_mapping": "keys",
       "units": {
-        "cpu_usage_percent": "percent",
-        "memory_used_percent": "percent",
-        "memory_total_bytes": "bytes",
-        "memory_available_bytes": "bytes"
+        "uptime_seconds": "seconds"
       }
+    },
+    "linux.cpu_utilization": {
+      "domain": "Compute",
+      "description": "CPU usage percentage (1-second differential from /proc/stat), plus 1/5/15-minute load averages and logical CPU core count.",
+      "default_frequency": "1 minute",
+      "command": "python3 -c \"import json,time\ns1=open('/proc/stat').readline().split()\ni1,t1=int(s1[4]),sum(int(x) for x in s1[1:])\ntime.sleep(1)\ns2=open('/proc/stat').readline().split()\ni2,t2=int(s2[4]),sum(int(x) for x in s2[1:])\ndt=t2-t1\ncpu=round((1-(i2-i1)/dt)*100,1) if dt else 0.0\nla=open('/proc/loadavg').read().split()\ncores=sum(1 for l in open('/proc/cpuinfo') if l.startswith('processor'))\nprint(json.dumps({'cpu_usage_percent':cpu,'load_avg_1':float(la[0]),'load_avg_5':float(la[1]),'load_avg_15':float(la[2]),'cpu_cores':cores}))\"",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "cpu_usage_percent": "percent"
+      }
+    },
+    "linux.memory_utilization": {
+      "domain": "Compute",
+      "description": "Memory usage percentage, used/free/available/total bytes, buffer and cache bytes, swap usage percentage and bytes. All from /proc/meminfo.",
+      "default_frequency": "1 minute",
+      "command": "python3 -c \"import json;m={l.split(':')[0].strip():int(l.split()[1])*1024 for l in open('/proc/meminfo') if ':' in l and len(l.split())>=2 and l.split()[1].isdigit()};t=m.get('MemTotal',1);a=m.get('MemAvailable',m.get('MemFree',0));u=t-a;st=m.get('SwapTotal',0);sf=m.get('SwapFree',0);su=st-sf;print(json.dumps({'memory_used_percent':round(u/t*100,1),'memory_used_bytes':u,'memory_available_bytes':a,'memory_total_bytes':t,'memory_free_bytes':m.get('MemFree',0),'cached_bytes':m.get('Cached',0),'buffers_bytes':m.get('Buffers',0),'swap_used_percent':round(su/st*100,1) if st else 0.0,'swap_used_bytes':su,'swap_total_bytes':st}))\"",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "memory_used_percent": "percent",
+        "memory_used_bytes": "bytes",
+        "memory_available_bytes": "bytes",
+        "memory_total_bytes": "bytes",
+        "memory_free_bytes": "bytes",
+        "cached_bytes": "bytes",
+        "buffers_bytes": "bytes",
+        "swap_used_percent": "percent",
+        "swap_used_bytes": "bytes",
+        "swap_total_bytes": "bytes"
+      }
+    },
+    "linux.disk_utilization": {
+      "domain": "Storage",
+      "description": "Aggregate disk usage across all real filesystems: volume count, maximum used percentage, total/free/used bytes. Excludes /proc, /sys, /run, and snap mounts.",
+      "default_frequency": "5 minutes",
+      "command": "python3 -c \"import json,subprocess;lines=subprocess.check_output(['df','-B1','--output=source,size,used,avail,pcent,target']).decode().strip().split('\\n')[1:];vols=[l.split() for l in lines];vols=[v for v in vols if len(v)==6 and v[5].startswith('/') and not any(v[5].startswith(x) for x in ['/proc','/sys','/dev/shm','/run','/snap'])];total=sum(int(v[1]) for v in vols);free=sum(int(v[3]) for v in vols);used=sum(int(v[2]) for v in vols);pcts=[int(v[4].rstrip('%')) for v in vols];print(json.dumps({'volume_count':len(vols),'max_disk_used_pct':max(pcts) if pcts else 0,'total_disk_bytes':total,'free_disk_bytes':free,'used_disk_bytes':used}))\"",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "max_disk_used_pct": "percent",
+        "total_disk_bytes": "bytes",
+        "free_disk_bytes": "bytes",
+        "used_disk_bytes": "bytes"
+      }
+    },
+    "linux.disk_details": {
+      "domain": "Storage",
+      "description": "Per-filesystem disk space breakdown: device, mount point, total/used/free bytes, and usage percentage. Returns one row per mounted real filesystem.",
+      "default_frequency": "10 minutes",
+      "command": "python3 -c \"import json,subprocess;lines=subprocess.check_output(['df','-B1','--output=source,size,used,avail,pcent,target']).decode().strip().split('\\n')[1:];rows=[];[rows.append({'device':p[0],'total_bytes':int(p[1]),'used_bytes':int(p[2]),'free_bytes':int(p[3]),'used_pct':int(p[4].rstrip('%')),'mount':p[5]}) for l in lines for p in [l.split()] if len(p)==6 and p[5].startswith('/') and not any(p[5].startswith(x) for x in ['/proc','/sys','/dev/shm','/run','/snap'])];print(json.dumps(rows if rows else [{'device':'none','total_bytes':0,'used_bytes':0,'free_bytes':0,'used_pct':0,'mount':'/'}]))\"",
+      "result_format": "json",
+      "result_mapping": "rows"
     },
     "linux.disk_io": {
       "domain": "Storage",
-      "description": "Maximum disk usage percent across all mounted filesystems.",
-      "default_frequency": "10 minutes",
-      "command": "python3 -c \"import json,subprocess;lines=subprocess.check_output(['df','-B1','--output=source,size,used,avail,pcent,target']).decode().strip().split('\\n')[1:];pcts=[int(p[4].rstrip('%')) for p in [l.split() for l in lines] if len(p)==6 and p[5].startswith('/') and not p[5].startswith('/proc') and not p[5].startswith('/sys')];print(json.dumps({'disk_used_percent':max(pcts) if pcts else 0}))\"",
+      "description": "Block device I/O throughput and IOPS: read/write bytes per second and read/write operations per second (1-second differential from /proc/diskstats). Covers sd*, vd*, nvme*, and md* devices.",
+      "default_frequency": "1 minute",
+      "command": "python3 -c \"import json,time\ndef rd():\n    rc=rb=wc=wb=0\n    for l in open('/proc/diskstats'):\n        p=l.split()\n        if len(p)>=13 and not p[2].startswith('loop'):\n            d=p[2]\n            if d[:2] in ('sd','vd','hd','md') or d.startswith(('nvme','xvd')):\n                rc+=int(p[3]);rb+=int(p[5])*512;wc+=int(p[7]);wb+=int(p[9])*512\n    return rc,rb,wc,wb\nrc1,rb1,wc1,wb1=rd()\ntime.sleep(1)\nrc2,rb2,wc2,wb2=rd()\nprint(json.dumps({'disk_read_bytes_per_sec':max(0,rb2-rb1),'disk_write_bytes_per_sec':max(0,wb2-wb1),'read_iops':max(0,rc2-rc1),'write_iops':max(0,wc2-wc1)}))\"",
       "result_format": "json",
       "result_mapping": "keys",
       "units": {
-        "disk_used_percent": "percent"
+        "disk_read_bytes_per_sec": "bytes",
+        "disk_write_bytes_per_sec": "bytes"
       }
     },
-    "linux.network": {
+    "linux.network_io": {
       "domain": "Network",
-      "description": "Total rx/tx bytes across non-loopback interfaces from /proc/net/dev.",
-      "default_frequency": "10 minutes",
-      "command": "python3 -c \"import json;lines=open('/proc/net/dev').read().strip().split('\\n')[2:];rx=tx=0;[None for l in lines if ':' in l and l.split(':')[0].strip()!='lo' and (globals().update({'rx':rx+int(l.split(':')[1].split()[0]),'tx':tx+int(l.split(':')[1].split()[8])}) or True)];print(json.dumps({'network_rx_bytes':rx,'network_tx_bytes':tx}))\"",
+      "description": "Aggregate network throughput across non-loopback interfaces: bytes received/sent per second and cumulative receive/send error counts (1-second differential from /proc/net/dev).",
+      "default_frequency": "1 minute",
+      "command": "python3 -c \"import json,time\ndef rn():\n    r={}\n    for l in open('/proc/net/dev').readlines()[2:]:\n        if ':' in l:\n            i,d=l.split(':',1)\n            i=i.strip()\n            if i!='lo':\n                v=d.split()\n                r[i]=(int(v[0]),int(v[8]),int(v[2]),int(v[10]))\n    return r\nn1=rn()\ntime.sleep(1)\nn2=rn()\nrx=sum(max(0,n2[i][0]-n1[i][0]) for i in n2 if i in n1)\ntx=sum(max(0,n2[i][1]-n1[i][1]) for i in n2 if i in n1)\nrex=sum(n2[i][2] for i in n2)\ntex=sum(n2[i][3] for i in n2)\nprint(json.dumps({'bytes_received_per_sec':rx,'bytes_sent_per_sec':tx,'total_receive_errors':rex,'total_send_errors':tex}))\"",
       "result_format": "json",
       "result_mapping": "keys",
       "units": {
-        "network_rx_bytes": "bytes",
-        "network_tx_bytes": "bytes"
+        "bytes_received_per_sec": "bytes",
+        "bytes_sent_per_sec": "bytes"
+      }
+    },
+    "linux.network_interfaces": {
+      "domain": "Network",
+      "description": "Per-interface cumulative network statistics: bytes and packets received/sent, errors, and drops. Returns one row per non-loopback interface from /proc/net/dev.",
+      "default_frequency": "5 minutes",
+      "command": "python3 -c \"import json;rows=[];[rows.append({'interface':i.strip(),'rx_bytes':int(v[0]),'rx_packets':int(v[1]),'rx_errors':int(v[2]),'rx_drop':int(v[3]),'tx_bytes':int(v[8]),'tx_packets':int(v[9]),'tx_errors':int(v[10]),'tx_drop':int(v[11])}) for l in open('/proc/net/dev').readlines()[2:] if ':' in l for i,d in [l.split(':',1)] for v in [d.split()] if len(v)>=12 and i.strip()!='lo'];print(json.dumps(rows if rows else []))\"",
+      "result_format": "json",
+      "result_mapping": "rows"
+    },
+    "linux.tcp_connections": {
+      "domain": "Network",
+      "description": "TCP connection state counts: ESTABLISHED, TIME-WAIT, CLOSE-WAIT, and LISTEN sockets. Uses ss from iproute2.",
+      "default_frequency": "5 minutes",
+      "command": "python3 -c \"import json,subprocess;out=subprocess.check_output(['ss','-an'],stderr=subprocess.DEVNULL).decode().split('\\n');est=sum(1 for l in out if l.startswith('tcp') and 'ESTAB' in l);tw=sum(1 for l in out if l.startswith('tcp') and 'TIME-WAIT' in l);cw=sum(1 for l in out if l.startswith('tcp') and 'CLOSE-WAIT' in l);li=sum(1 for l in out if l.startswith('tcp') and 'LISTEN' in l);print(json.dumps({'established_connections':est,'time_wait_connections':tw,'close_wait_connections':cw,'listening_ports':li,'total_tcp_connections':est+tw+cw+li}))\"",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "linux.services_health": {
+      "domain": "Availability",
+      "description": "systemd service health summary: total loaded units, actively running services, failed service count, and inactive service count. Requires systemd.",
+      "default_frequency": "1 minute",
+      "command": "python3 -c \"import json,subprocess\ntry:\n    out=subprocess.check_output(['systemctl','list-units','--type=service','--all','--no-pager','--no-legend'],stderr=subprocess.DEVNULL).decode()\n    total=active=failed=inactive=0\n    for l in out.strip().split('\\n'):\n        p=l.strip().lstrip(chr(9679)).split()\n        if len(p)>=4:\n            total+=1\n            if p[2]=='active' and p[3]=='running':active+=1\n            elif p[2]=='failed':failed+=1\n            elif p[2]=='inactive':inactive+=1\n    print(json.dumps({'total_units':total,'active_services':active,'failed_services':failed,'inactive_services':inactive}))\nexcept:\n    print(json.dumps({'total_units':0,'active_services':0,'failed_services':-1,'inactive_services':0}))\"",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "linux.services_details": {
+      "domain": "Availability",
+      "description": "All loaded systemd services with load state, active state, sub-state, and description. Returns up to 100 rows. Use to investigate which services are failed or stopped.",
+      "default_frequency": "10 minutes",
+      "command": "python3 -c \"import json,subprocess\ntry:\n    out=subprocess.check_output(['systemctl','list-units','--type=service','--all','--no-pager','--no-legend'],stderr=subprocess.DEVNULL).decode()\n    rows=[]\n    for l in out.strip().split('\\n')[:100]:\n        p=l.strip().lstrip(chr(9679)).split(None,4)\n        if len(p)>=4:\n            rows.append({'unit':p[0],'load_state':p[1],'active_state':p[2],'sub_state':p[3],'description':p[4].strip() if len(p)>4 else ''})\n    print(json.dumps(rows if rows else []))\nexcept:\n    print(json.dumps([]))\"",
+      "result_format": "json",
+      "result_mapping": "rows"
+    },
+    "linux.process_top_cpu": {
+      "domain": "Performance",
+      "description": "Top 20 processes by current CPU usage: username, PID, CPU%, memory%, VSZ, RSS, and command. Uses ps aux sorted by CPU descending.",
+      "default_frequency": "5 minutes",
+      "command": "python3 -c \"import json,subprocess;lines=subprocess.check_output(['ps','aux','--sort=-%cpu','--no-headers'],stderr=subprocess.DEVNULL).decode().strip().split('\\n');rows=[];[rows.append({'user':p[0],'pid':int(p[1]),'cpu_pct':float(p[2]),'mem_pct':float(p[3]),'vsz_kb':int(p[4]),'rss_kb':int(p[5]),'stat':p[7],'command':p[10][:100] if len(p)>10 else ''}) for l in lines[:20] for p in [l.split(None,10)] if len(p)>=10 and p[1].isdigit()];print(json.dumps(rows))\"",
+      "result_format": "json",
+      "result_mapping": "rows"
+    },
+    "linux.process_top_memory": {
+      "domain": "Performance",
+      "description": "Top 20 processes by memory usage: username, PID, CPU%, memory%, VSZ, RSS, and command. Uses ps aux sorted by RSS descending.",
+      "default_frequency": "5 minutes",
+      "command": "python3 -c \"import json,subprocess;lines=subprocess.check_output(['ps','aux','--sort=-%mem','--no-headers'],stderr=subprocess.DEVNULL).decode().strip().split('\\n');rows=[];[rows.append({'user':p[0],'pid':int(p[1]),'cpu_pct':float(p[2]),'mem_pct':float(p[3]),'vsz_kb':int(p[4]),'rss_kb':int(p[5]),'stat':p[7],'command':p[10][:100] if len(p)>10 else ''}) for l in lines[:20] for p in [l.split(None,10)] if len(p)>=10 and p[1].isdigit()];print(json.dumps(rows))\"",
+      "result_format": "json",
+      "result_mapping": "rows"
+    },
+    "linux.performance_overview": {
+      "domain": "Performance",
+      "description": "System-wide process, thread, and zombie counts from ps. Useful for detecting thread leaks or zombie accumulation.",
+      "default_frequency": "5 minutes",
+      "command": "python3 -c \"import json,subprocess;procs=subprocess.check_output(['ps','-e','--no-headers'],stderr=subprocess.DEVNULL).decode().strip().split('\\n');stats=subprocess.check_output(['ps','-eo','stat=','--no-headers'],stderr=subprocess.DEVNULL).decode().strip().split('\\n');threads=subprocess.check_output(['ps','-eLf','--no-headers'],stderr=subprocess.DEVNULL).decode().strip().split('\\n');zombies=sum(1 for s in stats if s.strip().startswith('Z'));print(json.dumps({'total_processes':len([p for p in procs if p.strip()]),'total_threads':len([t for t in threads if t.strip()]),'zombie_processes':zombies}))\"",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "linux.syslog_errors": {
+      "domain": "Logs",
+      "description": "Error and critical event counts from journald in the past hour, split by severity. Requires journalctl and systemd-journal access.",
+      "default_frequency": "10 minutes",
+      "command": "python3 -c \"import json,subprocess,datetime\nsince=(datetime.datetime.now()-datetime.timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')\ntry:\n    err=subprocess.run(['journalctl','--since',since,'--priority=err','--no-pager','--quiet'],capture_output=True,text=True,timeout=15)\n    ec=len([l for l in err.stdout.strip().split('\\n') if l.strip()]) if err.stdout.strip() else 0\n    crit=subprocess.run(['journalctl','--since',since,'--priority=crit','--no-pager','--quiet'],capture_output=True,text=True,timeout=15)\n    cc=len([l for l in crit.stdout.strip().split('\\n') if l.strip()]) if crit.stdout.strip() else 0\n    print(json.dumps({'error_count':ec,'critical_count':cc}))\nexcept:\n    print(json.dumps({'error_count':-1,'critical_count':-1}))\"",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "linux.journal_errors": {
+      "domain": "Logs",
+      "description": "Most recent 50 error and critical journal entries from the past 2 hours. Returns rows with timestamp, unit, priority level, and message excerpt.",
+      "default_frequency": "10 minutes",
+      "command": "python3 -c \"import json,subprocess,datetime\nsince=(datetime.datetime.now()-datetime.timedelta(hours=2)).strftime('%Y-%m-%d %H:%M:%S')\nrows=[]\ntry:\n    out=subprocess.run(['journalctl','--since',since,'--priority=err','--no-pager','--output=json','--lines=50'],capture_output=True,text=True,timeout=15)\n    for l in out.stdout.strip().split('\\n'):\n        if l.strip():\n            try:\n                e=json.loads(l)\n                ts=e.get('__REALTIME_TIMESTAMP','')\n                if ts:\n                    import datetime as dt\n                    ts=dt.datetime.fromtimestamp(int(ts)/1e6).strftime('%Y-%m-%d %H:%M:%S')\n                rows.append({'time':ts,'unit':e.get('_SYSTEMD_UNIT',e.get('SYSLOG_IDENTIFIER','')),'priority':e.get('PRIORITY',''),'message':str(e.get('MESSAGE',''))[:200]})\n            except:pass\nexcept:pass\nprint(json.dumps(rows[:50] if rows else [{'time':'','unit':'system','priority':'','message':'No errors found or journald unavailable'}]))\"",
+      "result_format": "json",
+      "result_mapping": "rows"
+    },
+    "linux.failed_logins": {
+      "domain": "Security",
+      "description": "Failed SSH login attempt count in the past hour, from journald (sshd unit) or /var/log/auth.log fallback. Counts Failed password, Invalid user, and authentication failure events.",
+      "default_frequency": "10 minutes",
+      "command": "python3 -c \"import json,subprocess,datetime\nsince=(datetime.datetime.now()-datetime.timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')\nfailed=0\ntry:\n    out=subprocess.run(['journalctl','--since',since,'--no-pager','--quiet','-u','ssh','-u','sshd'],capture_output=True,text=True,timeout=15).stdout\n    failed=sum(1 for l in out.split('\\n') if 'Failed password' in l or 'Invalid user' in l or 'authentication failure' in l.lower())\nexcept:\n    try:\n        out=open('/var/log/auth.log').read()\n        failed=sum(1 for l in out.split('\\n') if 'Failed password' in l or 'Invalid user' in l)\n    except:\n        failed=-1\nprint(json.dumps({'failed_login_count':failed}))\"",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "linux.local_users": {
+      "domain": "Security",
+      "description": "Local user account summary: total accounts, regular users (UID 1000-65533), root/UID-0 accounts, and sudo/wheel group member counts.",
+      "default_frequency": "1 hour",
+      "command": "python3 -c \"import json,subprocess\nusers=[l.split(':') for l in open('/etc/passwd').read().strip().split('\\n') if ':' in l and not l.startswith('#')]\nregular=[u for u in users if len(u)>=3 and u[2].isdigit() and 1000<=int(u[2])<65534]\nroot_count=sum(1 for u in users if len(u)>=3 and u[2]=='0')\ndef grp(g):\n    try:\n        m=subprocess.check_output(['getent','group',g],stderr=subprocess.DEVNULL).decode().strip().split(':')[-1].strip()\n        return len(m.split(',')) if m else 0\n    except:\n        return 0\nprint(json.dumps({'total_users':len(users),'regular_users':len(regular),'root_uid0_count':root_count,'sudo_group_members':grp('sudo'),'wheel_group_members':grp('wheel')}))\"",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "linux.open_ports": {
+      "domain": "Security",
+      "description": "Count of listening TCP and UDP ports using ss. High counts may indicate unintended services or misconfigured applications.",
+      "default_frequency": "10 minutes",
+      "command": "python3 -c \"import json,subprocess;tcp=subprocess.check_output(['ss','-tlnH'],stderr=subprocess.DEVNULL).decode().strip().split('\\n');udp=subprocess.check_output(['ss','-ulnH'],stderr=subprocess.DEVNULL).decode().strip().split('\\n');tc=len([l for l in tcp if l.strip()]);uc=len([l for l in udp if l.strip()]);print(json.dumps({'listening_tcp_ports':tc,'listening_udp_ports':uc,'total_listening_ports':tc+uc}))\"",
+      "result_format": "json",
+      "result_mapping": "keys"
+    },
+    "linux.system_info": {
+      "domain": "Configuration",
+      "description": "OS name, distribution ID, version, codename, kernel version, architecture, hostname, total memory in GB, CPU core count, and uptime in days. Reads /etc/os-release, /proc, and uname.",
+      "default_frequency": "1 hour",
+      "command": "python3 -c \"import json,subprocess\ntry:\n    os_r={l.split('=',1)[0].strip():l.split('=',1)[1].strip().strip('\\\"') for l in open('/etc/os-release') if '=' in l}\n    os_name=os_r.get('PRETTY_NAME',os_r.get('NAME','Unknown'))\n    os_id=os_r.get('ID','unknown')\n    os_version=os_r.get('VERSION_ID','')\n    os_codename=os_r.get('VERSION_CODENAME','')\nexcept:\n    os_name='Unknown';os_id='unknown';os_version='';os_codename=''\nkernel=subprocess.check_output(['uname','-r'],stderr=subprocess.DEVNULL).decode().strip()\narch=subprocess.check_output(['uname','-m'],stderr=subprocess.DEVNULL).decode().strip()\ntry:\n    hostname=subprocess.check_output(['hostname','-f'],stderr=subprocess.DEVNULL).decode().strip()\nexcept:\n    hostname=subprocess.check_output(['hostname'],stderr=subprocess.DEVNULL).decode().strip()\nm={l.split(':')[0].strip():int(l.split()[1])*1024 for l in open('/proc/meminfo') if ':' in l and len(l.split())>=2 and l.split()[1].isdigit()}\ncores=sum(1 for l in open('/proc/cpuinfo') if l.startswith('processor'))\nup_days=round(float(open('/proc/uptime').read().split()[0])/86400,1)\nprint(json.dumps({'hostname':hostname,'os_name':os_name,'os_id':os_id,'os_version':os_version,'os_codename':os_codename,'kernel_version':kernel,'architecture':arch,'total_memory_gb':round(m.get('MemTotal',0)/1024**3,1),'cpu_cores':cores,'uptime_days':up_days}))\"",
+      "result_format": "json",
+      "result_mapping": "keys",
+      "units": {
+        "total_memory_gb": "GB",
+        "uptime_days": "days"
       }
     }
   },
   "findings": {
-    "linux_cpu_usage_high": {
-      "title": "CPU Usage High",
+    "linux_cpu_usage_warning": {
+      "title": "CPU Usage High (Warning)",
       "domain": "Compute",
       "severity": "warning",
-      "condition": "cpu_usage_percent > 85",
-      "threshold": "85",
-      "recommendation": "Identify high-CPU processes, check for runaway cron jobs, and review scheduling.",
+      "condition": "cpu_usage_percent > 75",
+      "threshold": "75",
+      "recommendation": "Review running processes. Use linux.process_top_cpu to identify high-CPU consumers. Check for runaway cron jobs or application loops.",
       "metadata_json": {
         "metric_name": "cpu_usage_percent",
         "operator": ">",
-        "threshold": 85
+        "threshold": 75
       }
     },
-    "linux_disk_usage_high": {
-      "title": "Disk Usage High",
-      "domain": "Storage",
+    "linux_cpu_usage_critical": {
+      "title": "CPU Usage Critical (90%+)",
+      "domain": "Compute",
       "severity": "critical",
-      "condition": "disk_used_percent > 90",
+      "condition": "cpu_usage_percent > 90",
       "threshold": "90",
-      "recommendation": "Free disk space, archive or delete old logs, and review retention policies.",
+      "recommendation": "Server is CPU-saturated. Identify and terminate runaway processes immediately. Consider migrating workloads or adding CPU capacity.",
       "metadata_json": {
-        "metric_name": "disk_used_percent",
+        "metric_name": "cpu_usage_percent",
         "operator": ">",
         "threshold": 90
       }
     },
-    "linux_memory_pressure_high": {
-      "title": "Memory Pressure High",
+    "linux_load_avg_warning": {
+      "title": "Load Average High (Warning)",
       "domain": "Compute",
       "severity": "warning",
+      "condition": "load_avg_1 > 8",
+      "threshold": "8",
+      "recommendation": "1-minute load average exceeds 8. A load above the number of CPU cores indicates queueing. Check cpu_cores and review the top processes for CPU and I/O bottlenecks.",
+      "metadata_json": {
+        "metric_name": "load_avg_1",
+        "operator": ">",
+        "threshold": 8
+      }
+    },
+    "linux_load_avg_critical": {
+      "title": "Load Average Critical (>16)",
+      "domain": "Compute",
+      "severity": "critical",
+      "condition": "load_avg_1 > 16",
+      "threshold": "16",
+      "recommendation": "Sustained load average over 16 indicates severe CPU or I/O saturation. Identify the dominant consumers immediately. The server may become unresponsive.",
+      "metadata_json": {
+        "metric_name": "load_avg_1",
+        "operator": ">",
+        "threshold": 16
+      }
+    },
+    "linux_memory_usage_warning": {
+      "title": "Memory Usage High (Warning)",
+      "domain": "Compute",
+      "severity": "warning",
+      "condition": "memory_used_percent > 80",
+      "threshold": "80",
+      "recommendation": "Memory usage exceeds 80%. Review top memory consumers with linux.process_top_memory. Check for memory leaks in long-running processes.",
+      "metadata_json": {
+        "metric_name": "memory_used_percent",
+        "operator": ">",
+        "threshold": 80
+      }
+    },
+    "linux_memory_usage_critical": {
+      "title": "Memory Usage Critical (90%+)",
+      "domain": "Compute",
+      "severity": "critical",
       "condition": "memory_used_percent > 90",
       "threshold": "90",
-      "recommendation": "Review memory-heavy processes, check for memory leaks, and consider adding swap or RAM.",
+      "recommendation": "Memory is nearly exhausted. The kernel will invoke the OOM killer, which can terminate critical processes. Identify and restart memory-leaking services immediately.",
       "metadata_json": {
         "metric_name": "memory_used_percent",
         "operator": ">",
         "threshold": 90
       }
+    },
+    "linux_swap_usage_warning": {
+      "title": "Swap Usage High (Warning)",
+      "domain": "Compute",
+      "severity": "warning",
+      "condition": "swap_used_percent > 50",
+      "threshold": "50",
+      "recommendation": "More than 50% of swap is in use, indicating memory pressure. Active swapping severely degrades performance. Identify memory-heavy processes and consider adding RAM.",
+      "metadata_json": {
+        "metric_name": "swap_used_percent",
+        "operator": ">",
+        "threshold": 50
+      }
+    },
+    "linux_swap_usage_critical": {
+      "title": "Swap Usage Critical (80%+)",
+      "domain": "Compute",
+      "severity": "critical",
+      "condition": "swap_used_percent > 80",
+      "threshold": "80",
+      "recommendation": "Swap is nearly exhausted. The system is critically low on virtual memory. Risk of OOM kills and process crashes is high. Immediately free memory or expand swap space.",
+      "metadata_json": {
+        "metric_name": "swap_used_percent",
+        "operator": ">",
+        "threshold": 80
+      }
+    },
+    "linux_disk_space_warning": {
+      "title": "Disk Space Usage High (Warning)",
+      "domain": "Storage",
+      "severity": "warning",
+      "condition": "max_disk_used_pct > 80",
+      "threshold": "80",
+      "recommendation": "At least one filesystem is over 80% full. Review linux.disk_details to identify which mount. Run du -sh /* to find large directories. Archive or delete old logs.",
+      "metadata_json": {
+        "metric_name": "max_disk_used_pct",
+        "operator": ">",
+        "threshold": 80
+      }
+    },
+    "linux_disk_space_critical": {
+      "title": "Disk Space Usage Critical (90%+)",
+      "domain": "Storage",
+      "severity": "critical",
+      "condition": "max_disk_used_pct > 90",
+      "threshold": "90",
+      "recommendation": "A filesystem is over 90% full. Linux services will fail when disk space is exhausted. Immediately free space, expand the volume, or move data to another filesystem.",
+      "metadata_json": {
+        "metric_name": "max_disk_used_pct",
+        "operator": ">",
+        "threshold": 90
+      }
+    },
+    "linux_network_receive_errors_warning": {
+      "title": "Network Receive Errors Detected",
+      "domain": "Network",
+      "severity": "warning",
+      "condition": "total_receive_errors > 100",
+      "threshold": "100",
+      "recommendation": "Network adapter receive errors are accumulating. Check cable connections, NIC driver, and duplex/speed settings. Review ethtool -S <iface> for detailed NIC counters.",
+      "metadata_json": {
+        "metric_name": "total_receive_errors",
+        "operator": ">",
+        "threshold": 100
+      }
+    },
+    "linux_network_receive_errors_critical": {
+      "title": "Network Receive Errors Critical",
+      "domain": "Network",
+      "severity": "critical",
+      "condition": "total_receive_errors > 1000",
+      "threshold": "1000",
+      "recommendation": "High network error rate indicates a hardware or driver problem. Replace the cable, check the switch port, or update the NIC driver. This causes packet loss affecting all services.",
+      "metadata_json": {
+        "metric_name": "total_receive_errors",
+        "operator": ">",
+        "threshold": 1000
+      }
+    },
+    "linux_services_failed": {
+      "title": "systemd Service Failed",
+      "domain": "Availability",
+      "severity": "critical",
+      "condition": "failed_services > 0",
+      "threshold": "0",
+      "recommendation": "One or more systemd services are in the failed state. Run 'systemctl --failed' to list them and 'journalctl -u <service>' to investigate the failure reason.",
+      "metadata_json": {
+        "metric_name": "failed_services",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "linux_services_many_failed": {
+      "title": "Many systemd Services Failed",
+      "domain": "Availability",
+      "severity": "critical",
+      "condition": "failed_services > 5",
+      "threshold": "5",
+      "recommendation": "More than 5 systemd services are failed. This may indicate a system-wide issue such as a failed boot, resource exhaustion, or a dependency failure cascade. Review journald immediately.",
+      "metadata_json": {
+        "metric_name": "failed_services",
+        "operator": ">",
+        "threshold": 5
+      }
+    },
+    "linux_zombie_processes_high": {
+      "title": "Zombie Processes Accumulating",
+      "domain": "Performance",
+      "severity": "warning",
+      "condition": "zombie_processes > 5",
+      "threshold": "5",
+      "recommendation": "More than 5 zombie processes are present. Zombies accumulate when a parent process does not call wait(). Find the parent PID and investigate or restart it. Zombies consume PID table space.",
+      "metadata_json": {
+        "metric_name": "zombie_processes",
+        "operator": ">",
+        "threshold": 5
+      }
+    },
+    "linux_syslog_errors_warning": {
+      "title": "System Log Error Rate High",
+      "domain": "Logs",
+      "severity": "warning",
+      "condition": "error_count > 50",
+      "threshold": "50",
+      "recommendation": "More than 50 error-level journal entries in the past hour. Review linux.journal_errors to identify the dominant sources. Common causes: application crashes, kernel warnings, or disk errors.",
+      "metadata_json": {
+        "metric_name": "error_count",
+        "operator": ">",
+        "threshold": 50
+      }
+    },
+    "linux_syslog_errors_critical": {
+      "title": "System Log Error Rate Critical",
+      "domain": "Logs",
+      "severity": "critical",
+      "condition": "error_count > 200",
+      "threshold": "200",
+      "recommendation": "Over 200 error log entries in the past hour indicates a systemic problem. Review journalctl -p err -n 100 immediately to identify the dominant source. Consider a hardware failure or runaway service.",
+      "metadata_json": {
+        "metric_name": "error_count",
+        "operator": ">",
+        "threshold": 200
+      }
+    },
+    "linux_critical_events_detected": {
+      "title": "Critical-Level Events in System Journal",
+      "domain": "Logs",
+      "severity": "warning",
+      "condition": "critical_count > 0",
+      "threshold": "0",
+      "recommendation": "Critical-level events (priority 2) have been recorded in journald. These represent kernel panics, hardware errors, or severe application faults. Investigate immediately with 'journalctl -p crit'.",
+      "metadata_json": {
+        "metric_name": "critical_count",
+        "operator": ">",
+        "threshold": 0
+      }
+    },
+    "linux_failed_logins_warning": {
+      "title": "Failed SSH Login Attempts Elevated",
+      "domain": "Security",
+      "severity": "warning",
+      "condition": "failed_login_count > 20",
+      "threshold": "20",
+      "recommendation": "More than 20 failed SSH login attempts in the past hour. May indicate brute-force attempts. Review auth.log or journalctl -u sshd for source IPs. Consider fail2ban or firewall rules.",
+      "metadata_json": {
+        "metric_name": "failed_login_count",
+        "operator": ">",
+        "threshold": 20
+      }
+    },
+    "linux_failed_logins_critical": {
+      "title": "Failed SSH Logins Critical — Possible Brute-Force",
+      "domain": "Security",
+      "severity": "critical",
+      "condition": "failed_login_count > 100",
+      "threshold": "100",
+      "recommendation": "Over 100 failed SSH logins in an hour is a strong brute-force indicator. Block the source IP at the firewall immediately, enable fail2ban, and verify no accounts have been compromised.",
+      "metadata_json": {
+        "metric_name": "failed_login_count",
+        "operator": ">",
+        "threshold": 100
+      }
+    },
+    "linux_sudo_users_high": {
+      "title": "Excessive sudo/wheel Group Members",
+      "domain": "Security",
+      "severity": "warning",
+      "condition": "sudo_group_members > 5",
+      "threshold": "5",
+      "recommendation": "More than 5 users are in the sudo group. Follow the principle of least privilege. Remove unnecessary sudo memberships and use dedicated service accounts with minimal permissions.",
+      "metadata_json": {
+        "metric_name": "sudo_group_members",
+        "operator": ">",
+        "threshold": 5
+      }
+    },
+    "linux_listening_ports_high": {
+      "title": "High Number of Listening Ports",
+      "domain": "Security",
+      "severity": "warning",
+      "condition": "total_listening_ports > 30",
+      "threshold": "30",
+      "recommendation": "More than 30 ports are listening for connections. Review ss -tlnp and ss -ulnp to identify unexpected listeners. Disable or firewall services that should not be exposed.",
+      "metadata_json": {
+        "metric_name": "total_listening_ports",
+        "operator": ">",
+        "threshold": 30
+      }
     }
+  },
+  "charts": [
+    {
+      "key": "cpu_usage_percent",
+      "title": "CPU Usage %",
+      "chart_type": "line",
+      "metric_name": "cpu_usage_percent",
+      "domain": "Compute",
+      "thresholds": [],
+      "config_json": {}
+    },
+    {
+      "key": "memory_used_percent",
+      "title": "Memory Usage %",
+      "chart_type": "line",
+      "metric_name": "memory_used_percent",
+      "domain": "Compute",
+      "thresholds": [],
+      "config_json": {}
+    },
+    {
+      "key": "max_disk_used_pct",
+      "title": "Max Disk Usage %",
+      "chart_type": "line",
+      "metric_name": "max_disk_used_pct",
+      "domain": "Storage",
+      "thresholds": [],
+      "config_json": {}
+    },
+    {
+      "key": "load_avg_1",
+      "title": "Load Average (1 min)",
+      "chart_type": "line",
+      "metric_name": "load_avg_1",
+      "domain": "Compute",
+      "thresholds": [],
+      "config_json": {}
+    }
+  ],
+  "analysis_hints": [
+    {
+      "category": "CPU & Performance",
+      "target_type_id": "linux_server",
+      "hints": [
+        "What is the current CPU utilization trend and are there any processes causing spikes?",
+        "Is the load average consistently above the number of CPU cores? What is causing it?",
+        "Which processes are consuming the most CPU time right now?",
+        "Are there any zombie processes accumulating? What is their parent process?",
+        "Should this server's workload be redistributed to other hosts?"
+      ]
+    },
+    {
+      "category": "Memory & Storage",
+      "target_type_id": "linux_server",
+      "hints": [
+        "Is the memory usage within acceptable bounds, or is the server under memory pressure?",
+        "Are there signs of swap usage that indicate RAM exhaustion?",
+        "Which processes are consuming the most memory and could any be restarted?",
+        "Are any filesystems approaching capacity? Which one needs attention first?",
+        "Is there a trend of disk space being consumed faster than expected?"
+      ]
+    },
+    {
+      "category": "Services & Availability",
+      "target_type_id": "linux_server",
+      "hints": [
+        "Are any systemd services in the failed state? What is the failure reason?",
+        "What is the server uptime and were there any recent unexpected reboots?",
+        "Are there services that have failed repeatedly and should be investigated?",
+        "Is the TCP connection profile normal or are there signs of connection leaks?"
+      ]
+    },
+    {
+      "category": "Logs & Security",
+      "target_type_id": "linux_server",
+      "hints": [
+        "Are there any critical or error events in the system journal that need immediate attention?",
+        "What are the dominant services generating the most error log entries?",
+        "Are there signs of a brute-force SSH attack or unusual failed login patterns?",
+        "Are the sudo group members appropriate, or should any be removed?",
+        "Are there unexpectedly listening ports that should be firewalled?"
+      ]
+    },
+    {
+      "category": "Summary & Recommendations",
+      "target_type_id": "linux_server",
+      "hints": [
+        "Provide an executive summary of this Linux server's overall health.",
+        "What are the top 3 most urgent issues to address on this server right now?",
+        "What proactive maintenance tasks would improve the stability of this server over the next 30 days?",
+        "Based on the findings and metrics, what is the overall risk level for this server?"
+      ]
+    }
+  ],
+  "ui_contributions": {
+    "plugin_label": "Linux Server Monitoring",
+    "nav_pages": [
+      "logs"
+    ],
+    "operations_tabs": [],
+    "target_workspace_tabs": [
+      "Control Center",
+      "CPU & Performance",
+      "Memory",
+      "Storage",
+      "Disk I/O",
+      "Network",
+      "Services",
+      "Processes",
+      "System Logs",
+      "Log Analysis",
+      "Security Monitor",
+      "System Info",
+      "Best Practices",
+      "Custom Collectors",
+      "Host Diagnose",
+      "Alert Events",
+      "Target Readiness"
+    ]
+  },
+  "metric_catalog": [
+    {
+      "domain": "CPU & Load",
+      "metrics": [
+        {
+          "name": "cpu_usage_percent",
+          "label": "CPU Usage",
+          "unit": "%",
+          "hint": "CPU utilization over the past second — all cores combined"
+        },
+        {
+          "name": "load_avg_1",
+          "label": "Load Avg (1m)",
+          "hint": "1-minute load average; above cpu_cores indicates saturation"
+        },
+        {
+          "name": "load_avg_5",
+          "label": "Load Avg (5m)",
+          "hint": "5-minute load average — more stable indicator of sustained load"
+        },
+        {
+          "name": "load_avg_15",
+          "label": "Load Avg (15m)",
+          "hint": "15-minute load average — trending indicator"
+        },
+        {
+          "name": "cpu_cores",
+          "label": "CPU Cores",
+          "hint": "Logical CPU count from /proc/cpuinfo"
+        },
+        {
+          "name": "uptime_seconds",
+          "label": "Uptime",
+          "unit": "s",
+          "hint": "Seconds since last boot; low value indicates a recent reboot"
+        }
+      ]
+    },
+    {
+      "domain": "Memory",
+      "metrics": [
+        {
+          "name": "memory_used_percent",
+          "label": "Memory Used",
+          "unit": "%",
+          "hint": "Physical RAM in use as a percentage (total minus available)"
+        },
+        {
+          "name": "memory_available_bytes",
+          "label": "Available Memory",
+          "unit": "B",
+          "hint": "Memory available for new allocations including reclaimable cache"
+        },
+        {
+          "name": "memory_total_bytes",
+          "label": "Total Memory",
+          "unit": "B",
+          "hint": "Total installed physical RAM"
+        },
+        {
+          "name": "cached_bytes",
+          "label": "Page Cache",
+          "unit": "B",
+          "hint": "Reclaimable page cache; Linux uses free RAM for caching"
+        },
+        {
+          "name": "swap_used_percent",
+          "label": "Swap Used",
+          "unit": "%",
+          "hint": "Swap in use as %; active swap use indicates memory pressure"
+        },
+        {
+          "name": "swap_total_bytes",
+          "label": "Total Swap",
+          "unit": "B",
+          "hint": "Total swap space configured"
+        }
+      ]
+    },
+    {
+      "domain": "Storage",
+      "metrics": [
+        {
+          "name": "max_disk_used_pct",
+          "label": "Max Disk Used",
+          "unit": "%",
+          "hint": "Highest used % across all real filesystems"
+        },
+        {
+          "name": "total_disk_bytes",
+          "label": "Total Disk",
+          "unit": "B",
+          "hint": "Combined capacity of all mounted filesystems"
+        },
+        {
+          "name": "free_disk_bytes",
+          "label": "Free Disk",
+          "unit": "B",
+          "hint": "Combined free space across all real filesystems"
+        },
+        {
+          "name": "volume_count",
+          "label": "Volume Count",
+          "hint": "Number of mounted real filesystems"
+        },
+        {
+          "name": "disk_read_bytes_per_sec",
+          "label": "Disk Read B/s",
+          "unit": "B/s",
+          "hint": "Block device read throughput per second"
+        },
+        {
+          "name": "disk_write_bytes_per_sec",
+          "label": "Disk Write B/s",
+          "unit": "B/s",
+          "hint": "Block device write throughput per second"
+        },
+        {
+          "name": "read_iops",
+          "label": "Read IOPS",
+          "hint": "Read operations per second across all block devices"
+        },
+        {
+          "name": "write_iops",
+          "label": "Write IOPS",
+          "hint": "Write operations per second across all block devices"
+        }
+      ]
+    },
+    {
+      "domain": "Network",
+      "metrics": [
+        {
+          "name": "bytes_received_per_sec",
+          "label": "Bytes In/s",
+          "unit": "B/s",
+          "hint": "Total inbound network throughput across all non-loopback interfaces"
+        },
+        {
+          "name": "bytes_sent_per_sec",
+          "label": "Bytes Out/s",
+          "unit": "B/s",
+          "hint": "Total outbound network throughput"
+        },
+        {
+          "name": "total_receive_errors",
+          "label": "Receive Errors",
+          "hint": "Cumulative inbound packet errors — non-zero warrants NIC investigation"
+        },
+        {
+          "name": "total_send_errors",
+          "label": "Send Errors",
+          "hint": "Cumulative outbound packet errors"
+        },
+        {
+          "name": "established_connections",
+          "label": "Established Connections",
+          "hint": "TCP connections in ESTABLISHED state"
+        },
+        {
+          "name": "time_wait_connections",
+          "label": "TIME_WAIT Connections",
+          "hint": "TCP connections in TIME_WAIT; high count may indicate port exhaustion"
+        },
+        {
+          "name": "listening_ports",
+          "label": "Listening Ports",
+          "hint": "TCP ports in LISTEN state"
+        }
+      ]
+    },
+    {
+      "domain": "Services & Processes",
+      "metrics": [
+        {
+          "name": "failed_services",
+          "label": "Failed Services",
+          "hint": "Count of systemd services in failed state — non-zero needs investigation"
+        },
+        {
+          "name": "active_services",
+          "label": "Active Services",
+          "hint": "systemd services currently in active/running state"
+        },
+        {
+          "name": "total_units",
+          "label": "Total Units",
+          "hint": "Total loaded systemd service units"
+        },
+        {
+          "name": "total_processes",
+          "label": "Total Processes",
+          "hint": "All running processes on the system"
+        },
+        {
+          "name": "total_threads",
+          "label": "Total Threads",
+          "hint": "All threads; rising value may indicate a thread leak"
+        },
+        {
+          "name": "zombie_processes",
+          "label": "Zombie Processes",
+          "hint": "Processes in Z state waiting for parent to call wait()"
+        }
+      ]
+    },
+    {
+      "domain": "Logs & Events",
+      "metrics": [
+        {
+          "name": "error_count",
+          "label": "Journal Errors",
+          "hint": "Error-priority events in journald in the last collection window"
+        },
+        {
+          "name": "critical_count",
+          "label": "Critical Events",
+          "hint": "Critical-priority events — kernel panics, hardware faults, severe crashes"
+        }
+      ]
+    },
+    {
+      "domain": "Security",
+      "metrics": [
+        {
+          "name": "failed_login_count",
+          "label": "Failed SSH Logins/hr",
+          "hint": "Failed SSH authentication attempts; > 20/hr indicates brute-force"
+        },
+        {
+          "name": "sudo_group_members",
+          "label": "Sudo Group Members",
+          "hint": "Users in the sudo group; > 5 is flagged as a security risk"
+        },
+        {
+          "name": "root_uid0_count",
+          "label": "Root UID-0 Accounts",
+          "hint": "Accounts with UID 0 (root equivalent); should be exactly 1"
+        },
+        {
+          "name": "regular_users",
+          "label": "Regular Users",
+          "hint": "Local user accounts with UID 1000-65533"
+        },
+        {
+          "name": "total_listening_ports",
+          "label": "Listening Ports (Total)",
+          "hint": "Combined TCP+UDP listening ports; high count warrants review"
+        },
+        {
+          "name": "listening_tcp_ports",
+          "label": "TCP Listening Ports",
+          "hint": "TCP ports accepting connections"
+        }
+      ]
+    }
+  ],
+  "config_templates": {
+    "command": "python3 -c \"import json,subprocess\nresult = {\n    'hostname': subprocess.check_output(['hostname']).decode().strip(),\n    'value': 42,\n    'collected_at': __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')\n}\nprint(json.dumps(result))\""
   }
 }

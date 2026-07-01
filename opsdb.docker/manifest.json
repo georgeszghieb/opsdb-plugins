@@ -1,7 +1,7 @@
 {
   "key": "opsdb.docker",
   "name": "Docker Container Monitoring",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "OpsDB Platform",
   "description": "Monitor Docker hosts and containers including container health, restart counts, resource usage, image inventory, and Docker Engine metrics.",
   "license_feature": "opsdb.docker",

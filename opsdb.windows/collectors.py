@@ -49,14 +49,21 @@ def test_connection(params: dict) -> dict:
                 operation_timeout_sec=10,
                 read_timeout_sec=12,
             )
-            result = session.run_ps("$PSVersionTable.PSVersion.Major")
+            result = session.run_ps(
+                "$PSVersionTable.PSVersion.Major; ([System.Environment]::OSVersion.Version).ToString()"
+            )
             if result.status_code == 0:
-                ps_ver = result.std_out.decode("utf-8", errors="replace").strip()
-                return {
+                lines = result.std_out.decode("utf-8", errors="replace").strip().splitlines()
+                ps_ver = lines[0].strip() if lines else ""
+                os_version = lines[1].strip() if len(lines) > 1 else None
+                response = {
                     "success": True,
                     "message": f"WinRM authenticated ({transport.upper()}) on {host}:{port} — PowerShell {ps_ver}",
                     "latency_ms": latency,
                 }
+                if os_version:
+                    response["version"] = os_version
+                return response
             err = result.std_err.decode("utf-8", errors="replace").strip()
             return {"success": False, "message": f"WinRM auth OK but PS command failed: {err[:200]}", "latency_ms": latency}
         except Exception as exc:

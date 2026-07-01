@@ -1,7 +1,7 @@
 {
   "key": "opsdb.business_validation",
   "name": "Business Validation Observability",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "author": "OpsDB Platform",
   "description": "Monitor data quality through parameterised SQL checks including row count anomaly detection, null rate analysis, duplicate detection, and data freshness validation against PostgreSQL or SQL Server targets.",
   "license_feature": "opsdb.business_validation",

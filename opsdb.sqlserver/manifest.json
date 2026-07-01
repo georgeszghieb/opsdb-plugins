@@ -1,7 +1,7 @@
 {
   "key": "opsdb.sqlserver",
   "name": "SQL Server Observability",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "OpsDB Platform",
   "description": "Monitor Microsoft SQL Server instances including wait statistics, blocking queries, missing indexes, tempdb health, and log file usage.",
   "license_feature": "opsdb.sqlserver",

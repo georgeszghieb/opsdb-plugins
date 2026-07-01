@@ -18,7 +18,16 @@ def test_connection(params: dict) -> dict:
         t0 = time.perf_counter()
         v1 = k8s_client.CoreV1Api()
         v1.list_namespace(_request_timeout=5)
-        return {"success": True, "message": "Kubernetes API reachable.", "latency_ms": int((time.perf_counter() - t0) * 1000)}
+        version = None
+        try:
+            git_version = k8s_client.VersionApi().get_code().git_version
+            version = git_version.lstrip("v") if git_version else None
+        except Exception:
+            pass
+        result = {"success": True, "message": "Kubernetes API reachable.", "latency_ms": int((time.perf_counter() - t0) * 1000)}
+        if version:
+            result["version"] = version
+        return result
     except Exception as exc:
         return {"success": False, "message": str(exc)}
 

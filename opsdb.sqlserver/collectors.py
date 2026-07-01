@@ -31,8 +31,18 @@ def test_connection(params: dict) -> dict:
     try:
         t0 = time.perf_counter()
         conn = pymssql.connect(server=host, port=port, database=database, user=user, password=password, login_timeout=5)
+        version = None
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT SERVERPROPERTY('ProductVersion')")
+                version = cur.fetchone()[0]
+        except Exception:
+            pass
         conn.close()
-        return {"success": True, "message": f"Connected to {host}:{port}", "latency_ms": int((time.perf_counter() - t0) * 1000)}
+        result = {"success": True, "message": f"Connected to {host}:{port}", "latency_ms": int((time.perf_counter() - t0) * 1000)}
+        if version:
+            result["version"] = str(version)
+        return result
     except Exception as exc:
         return {"success": False, "message": str(exc)}
 
